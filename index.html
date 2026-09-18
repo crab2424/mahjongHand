@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>一人麻雀 — ツモ切りシミュレーター</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-display="glyph">
+  <div class="app">
+    <!-- ===== ヘッダー: 局情報 ===== -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">🀄</span>
+        <h1>一人麻雀</h1>
+      </div>
+      <div class="info-block">
+        <span class="label">局</span>
+        <span class="value" id="round-info">東場 ・ 自風 東</span>
+      </div>
+      <div class="info-block">
+        <span class="label">ドラ表示牌</span>
+        <div class="dora" id="dora"></div>
+      </div>
+      <div class="info-block">
+        <span class="label">残り牌</span>
+        <span class="value"><b id="remaining">0</b><small> 枚</small></span>
+      </div>
+      <div class="info-block">
+        <span class="label">巡目</span>
+        <span class="value"><b id="turn">0</b></span>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="btn-settings" type="button">⚙ 設定</button>
+    </header>
+
+    <!-- ===== メイン: 卓と情報パネル ===== -->
+    <main>
+      <section class="table" id="table">
+        <div class="status" id="status">
+          <div class="shanten" id="shanten">—</div>
+          <div class="waits" id="waits"></div>
+        </div>
+        <div class="river-wrap">
+          <div class="river" id="river"></div>
+          <div class="riichi-stick hidden" id="riichi-stick" title="リーチ棒"><span></span></div>
+        </div>
+        <div class="toast-layer" id="toast-layer"></div>
+      </section>
+
+      <aside class="side">
+        <section class="panel hint-panel">
+          <h2>
+            牌効率
+            <label class="toggle"><input type="checkbox" id="chk-hints"> 表示</label>
+          </h2>
+          <div class="hint" id="hint"></div>
+        </section>
+        <section class="panel grow">
+          <h2>記録</h2>
+          <ul class="log" id="log"></ul>
+        </section>
+      </aside>
+    </main>
+
+    <!-- ===== フッター: 手牌と操作 ===== -->
+    <footer class="hand-area">
+      <div class="actions" id="actions">
+        <button class="btn primary hidden" id="btn-draw" type="button">ツモる</button>
+        <button class="btn win hidden" id="btn-tsumo" type="button">ツモ和了</button>
+        <button class="btn accent hidden" id="btn-riichi" type="button">リーチ</button>
+        <button class="btn accent hidden" id="btn-kan" type="button">カン</button>
+        <button class="btn hidden" id="btn-tsumogiri" type="button">見逃してツモ切り</button>
+        <button class="btn ghost hidden" id="btn-cancel" type="button">キャンセル</button>
+        <span class="mode-msg" id="mode-msg"></span>
+      </div>
+      <div class="hand-row">
+        <div class="hand" id="hand"></div>
+        <div class="kans" id="kans"></div>
+      </div>
+      <div class="controls">
+        <button class="btn reset" id="btn-reset" type="button">⟳ 配牌リセット</button>
+        <span class="hint-text">牌をクリックで打牌 ／ <kbd>N</kbd> 配牌リセット ／ <kbd>Esc</kbd> キャンセル</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ===== 結果ダイアログ ===== -->
+  <dialog class="modal" id="result-dialog">
+    <div class="modal-card result-card">
+      <div id="result-body"></div>
+      <div class="modal-actions">
+        <button class="btn primary" id="btn-result-next" type="button">⟳ 次の配牌</button>
+        <button class="btn ghost" id="btn-result-close" type="button">閉じて手牌を見る</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ===== 設定ダイアログ ===== -->
+  <dialog class="modal" id="settings-dialog">
+    <form class="modal-card settings-card" method="dialog">
+      <h2>設定</h2>
+      <label class="row">
+        <span>牌の表示</span>
+        <select id="set-display">
+          <option value="glyph">麻雀牌の文字（🀇 🀙 🀐）</option>
+          <option value="text">数字＋文字（5萬 / 東）</option>
+        </select>
+      </label>
+      <label class="row">
+        <span>場風</span>
+        <select id="set-roundWind"><option value="27">東</option><option value="28">南</option></select>
+      </label>
+      <label class="row">
+        <span>自風</span>
+        <select id="set-seatWind">
+          <option value="27">東（親）</option><option value="28">南</option><option value="29">西</option><option value="30">北</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="set-autoDraw"> 打牌後に自動でツモる</label>
+      <label class="check"><input type="checkbox" id="set-autoTsumogiri"> リーチ後は自動でツモ切り（和了・カンが無いとき）</label>
+      <label class="check"><input type="checkbox" id="set-twoClick"> 打牌は2回クリックで確定</label>
+      <label class="check"><input type="checkbox" id="set-redDora"> 赤ドラあり（赤5 各色1枚）<small>次の配牌から</small></label>
+      <label class="check"><input type="checkbox" id="set-simulateOthers"> 他家のツモを模擬（1巡で山が4枚減る・約28巡）<small>次の配牌から</small></label>
+      <div class="modal-actions">
+        <button class="btn primary" value="close">閉じる</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/tiles.js"></script>
+  <script src="js/shanten.js"></script>
+  <script src="js/yaku.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
