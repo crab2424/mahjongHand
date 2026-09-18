@@ -155,6 +155,22 @@ main {
   align-items: center;
   gap: 4px;
 }
+/* 卓左上の自動操作トグル */
+.auto-toggles {
+  grid-column: 1;
+  justify-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.auto-toggles .tg { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; color: rgba(255,255,255,0.85); }
+.auto-toggles .tg input { width: 14px; height: 14px; accent-color: var(--win); margin: 0; }
+.auto-toggles .tg:has(input:checked) { color: var(--win); }
 /* 卓右上の待ち表示（聴牌中は常に表示） */
 .waits-box {
   grid-column: 3;
@@ -167,7 +183,10 @@ main {
   max-width: 100%;
   animation: fadeIn 0.3s ease both;
 }
-.waits-title { font-size: 11px; color: var(--accent); letter-spacing: 0.1em; margin-bottom: 4px; white-space: nowrap; }
+.waits-title { font-size: 11px; color: var(--accent); letter-spacing: 0.1em; margin-bottom: 4px; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+.waits-box.preview { border-color: rgba(79, 195, 247, 0.6); background: rgba(10, 40, 60, 0.45); }
+.waits-box.preview .waits-title { color: #7fd4ff; }
+.waits-box.preview .waits-list .total { color: #7fd4ff; }
 .waits-list { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; font-size: 12px; }
 .waits-list .wait {
   display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
@@ -293,7 +312,28 @@ main {
   gap: 22px;
   min-height: calc(var(--tile-lg-h) + 24px);
   padding-top: 20px;
+  padding-bottom: 6px;
 }
+/* 手牌の下のキー表示 */
+.tile .key {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+  pointer-events: none;
+}
+body.show-keys .tile .key { display: block; }
+body.show-keys .hand-row { padding-bottom: 30px; }
+.tile.drawn .key { color: var(--accent); border-color: rgba(255, 213, 74, 0.5); }
 .hand { display: flex; align-items: flex-end; gap: 4px; transition: opacity 0.3s; }
 .hand-gap { width: 16px; flex: none; }
 /* ツモ牌が無いときの空き枠（手牌13枚の位置を固定するため） */
@@ -309,6 +349,7 @@ main {
   justify-content: center;
   gap: 8px 18px;
   min-width: 0;
+  margin-top: 14px;
 }
 .hint-text { color: var(--muted); font-size: 12px; }
 .btn.auto { background: rgba(126, 224, 129, 0.16); border-color: rgba(126, 224, 129, 0.5); }
@@ -402,6 +443,28 @@ main {
 .tile.suit-z[data-kind="31"] { color: #9a9a92; }
 .tile.suit-z[data-kind="32"] { color: var(--suit-s); }
 .tile.suit-z[data-kind="33"] { color: var(--suit-m); }
+/* ドラ: 金色の背景と右上の印 */
+.tile.dora {
+  background: linear-gradient(170deg, #fff6d0, #f3dc8c);
+  box-shadow: 0 2px 0 #c9a94a, 0 3px 6px rgba(0, 0, 0, 0.45), 0 0 8px rgba(255, 213, 74, 0.45);
+}
+.tile.tile-lg.dora { box-shadow: 0 4px 0 #c9a94a, 0 6px 10px rgba(0,0,0,0.5), 0 0 12px rgba(255, 213, 74, 0.5); }
+.tile.dora::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 8px 8px 0 0;
+  border-color: #e0a800 transparent transparent transparent;
+}
+.tile.tile-xs.dora::after, .tile.tile-sm.dora::after { border-width: 5px 5px 0 0; }
+/* ホバー中の手牌と同じ牌（手牌・河・ドラ表示・カン） */
+.tile.same {
+  outline: 3px solid #4fc3f7;
+  outline-offset: -1px;
+  box-shadow: 0 0 10px 2px rgba(79, 195, 247, 0.7), 0 2px 0 var(--tile-edge);
+}
 .tile.red { color: var(--red-dora); }
 .tile.red::before {
   content: "";
@@ -600,7 +663,10 @@ button.tile.locked:disabled { cursor: not-allowed; }
 }
 @media (max-width: 640px) {
   .status-row { grid-template-columns: 1fr; }
-  .status, .waits-box { grid-column: 1; justify-self: center; }
+  .status, .waits-box, .auto-toggles { grid-column: 1; justify-self: center; }
+  .auto-toggles { flex-direction: row; gap: 10px; }
+  body.show-keys .tile .key { display: none; }
+  body.show-keys .hand-row { padding-bottom: 6px; }
   .tileset-grid { grid-template-columns: 1fr; }
   .hand { gap: 2px; }
   .hand-area { padding-left: 8px; padding-right: 8px; }

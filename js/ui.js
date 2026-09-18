@@ -10,7 +10,12 @@ const UI = (() => {
     redDora: true,
     autoDraw: true,
     autoTsumogiri: true,
-    twoClick: false,
+    clickMode: 'single',     // single | double
+    fastTsumo: false,        // ツモ動作の簡略化
+    showKeys: true,          // 手牌の下にキー表示
+    autoWin: false,          // 自動和了
+    autoKan: false,          // 自動カン
+    autoTsumogiriAll: false, // 常に自動ツモ切り
     hints: true,
     simulateOthers: false,
     maxDraws: 0,
@@ -23,13 +28,19 @@ const UI = (() => {
     tileM19: true, tileM28: true, tileP19: true, tileP28: true, tileS19: true, tileS28: true, tileZ: true,
   };
   const SETTING_KEYS = [
-    'display', 'roundWind', 'seatWind', 'autoDraw', 'autoTsumogiri', 'twoClick',
+    'display', 'roundWind', 'seatWind', 'autoDraw', 'autoTsumogiri', 'clickMode', 'fastTsumo', 'showKeys',
     'instantReset', 'autoReset', 'autoResetInterval', 'autoResetShanten',
     'redDora', 'tileM19', 'tileM28', 'tileP19', 'tileP28', 'tileS19', 'tileS28', 'tileZ',
     'maxDraws', 'simulateOthers',
   ];
   const TILE_KEYS = Tiles.TILE_GROUPS.map((g) => g.key);
   const MIN_WALL_TILES = 40;   // 王牌14 + 配牌13 + 最低限のツモ
+  const AUTO_KEYS = ['autoWin', 'autoKan', 'autoTsumogiriAll']; // 卓上のトグル
+  // キーボード打牌: 手牌の左から順に対応するキー（JIS 配列の数字キー列）
+  const KEY_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥'];
+  const KEY_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen'];
+  const KEY_CHARS = { '1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7, '9': 8, '0': 9, '-': 10, '^': 11, '=': 11, '¥': 12, '\\': 12 };
+  const canHover = typeof matchMedia === 'function' && matchMedia('(hover: hover)').matches;
   const FAST_AUTO_MS = 500;    // これ未満の間隔は「高速」扱い（アニメーション省略・表示間引き）
 
   let settings;
@@ -41,6 +52,8 @@ const UI = (() => {
   let analysis = null;       // 牌効率解析（14枚時のみ）
   let shownDora = 0;         // 表示済みドラ表示牌の数（めくりアニメ用）
   let waitsKey = '';         // 待ち表示の内容キー（変化時のみ再描画）
+  let hoverKind = null;      // ホバー中の手牌の牌種（視覚補助）
+  let hoverPreview = null;   // ホバー中の牌を切った場合の待ち（聴牌になる場合のみ）
   const auto = { running: false, timer: null, count: 0, lastRender: 0 };
   const els = {};
 
@@ -54,10 +67,11 @@ const UI = (() => {
       'river', 'riichi-stick', 'toast-layer', 'hint', 'log', 'hand', 'kans',
       'btn-draw', 'btn-tsumo', 'btn-riichi', 'btn-kan', 'btn-tsumogiri', 'btn-cancel', 'mode-msg',
       'btn-reset', 'btn-auto', 'auto-status', 'btn-settings', 'chk-hints', 'result-dialog', 'settings-dialog',
-      'result-body', 'btn-result-next', 'btn-result-close', 'table', 'tileset-note',
+      'result-body', 'btn-result-next', 'btn-result-close', 'btn-show-result', 'table', 'tileset-note',
     ];
     for (const id of ids) els[camel(id)] = document.getElementById(id);
     document.body.dataset.display = settings.display;
+    document.body.classList.toggle('show-keys', !!settings.showKeys);
     bindEvents();
     syncSettingsForm();
     syncAutoUI();
@@ -74,6 +88,7 @@ const UI = (() => {
       s = Object.assign({}, DEFAULTS);
     }
     s.autoReset = false; // 自動リセットは起動時には常に停止状態
+    if (s.twoClick) { s.clickMode = 'double'; delete s.twoClick; } // 旧設定の移行
     if (countTiles(s) < MIN_WALL_TILES) for (const k of TILE_KEYS) s[k] = true;
     return s;
   }
@@ -104,7 +119,32 @@ const UI = (() => {
       applyHandState();
     });
     els.btnResultNext.addEventListener('click', () => { els.resultDialog.close(); resetGame(); });
-    els.btnResultClose.addEventListener('click', () => els.resultDialog.close());
+    els.btnResultClose.addEventListener('click', () => { els.resultDialog.close(); renderActions(); });
+    els.btnShowResult.addEventListener('click', () => { if (game.result) showResult(game.result); });
+
+    // 卓上の自動操作トグル
+    for (const key of AUTO_KEYS) {
+      const el = document.getElementById(`tg-${key}`);
+      el.checked = !!settings[key];
+      el.addEventListener('change', async () => {
+        settings[key] = el.checked;
+        saveSettings();
+        if (!el.checked) return;
+        // ON にした瞬間にも適用（アニメーション中なら終わるまで待つ）
+        const g = gen;
+        for (let i = 0; i < 30 && busy; i++) await sleep(100);
+        if (g === gen && !busy) afterDraw(g, game.drawn);
+      });
+    }
+
+    // 手牌ホバー時の視覚補助（マウス操作のときのみ）
+    if (canHover) {
+      els.hand.addEventListener('mouseover', (e) => {
+        const t = e.target.closest('.tile[data-kind]');
+        if (t) setHover(+t.dataset.kind);
+      });
+      els.hand.addEventListener('mouseleave', () => setHover(null));
+    }
 
     for (const key of SETTING_KEYS) {
       const el = document.getElementById(`set-${key}`);
@@ -134,7 +174,20 @@ const UI = (() => {
       else if (e.key === 'n' || e.key === 'N') { stopAuto(); resetGame(); }
       else if (e.key === 'a' || e.key === 'A') toggleAuto();
       else if (e.key === 't' || e.key === 'T') { if (!els.btnTsumo.classList.contains('hidden')) doTsumo(); }
-      else if (e.key === ' ' || e.key === 'Enter') { if (!els.btnDraw.classList.contains('hidden')) { e.preventDefault(); doDraw(); } }
+      else if (e.key === ' ') { if (!els.btnDraw.classList.contains('hidden')) { e.preventDefault(); doDraw(); } }
+      else if (e.key === 'Enter') {
+        if (!els.btnDraw.classList.contains('hidden')) { e.preventDefault(); doDraw(); }
+        else if (game.drawn && game.phase === 'discard') { e.preventDefault(); onTileKey(game.drawn.id, game.drawn.kind); }
+      }
+      else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        let idx = KEY_CODES.indexOf(e.code);
+        if (idx < 0 && e.key in KEY_CHARS) idx = KEY_CHARS[e.key];
+        if (idx >= 0 && idx < game.hand.length && game.phase === 'discard') {
+          e.preventDefault();
+          const t = game.hand[idx];
+          onTileKey(t.id, t.kind);
+        }
+      }
     });
     // 入場アニメーションのクラスは終了後に外す（hover 等の transform を有効にするため）
     document.addEventListener('animationend', (e) => {
@@ -169,6 +222,11 @@ const UI = (() => {
     } else if (key === 'autoDraw') {
       renderActions();
       if (settings.autoDraw && game.phase === 'draw' && !busy) doDraw();
+    } else if (key === 'showKeys') {
+      document.body.classList.toggle('show-keys', !!settings.showKeys);
+    } else if (key === 'clickMode') {
+      selectedId = null;
+      applyHandState();
     } else if (key === 'autoReset') {
       if (settings.autoReset) startAuto(); else stopAuto();
     } else if (key === 'autoResetShanten' || key === 'autoResetInterval') {
@@ -351,13 +409,30 @@ const UI = (() => {
     await afterDraw(g, tile);
   }
 
-  /** ツモ後の自動処理（リーチ中のツモ切りなど） */
+  /** ツモ後の自動処理（自動和了・自動カン・自動ツモ切り） */
   async function afterDraw(g, tile) {
-    if (!tile || game.phase !== 'discard') return;
-    if (game.riichi && settings.autoTsumogiri && !game.canTsumo() && game.kanOptions().length === 0) {
-      await sleep(550);
+    if (!tile || game.phase !== 'discard' || mode !== 'normal' || auto.running) return;
+    const wait = settings.fastTsumo ? 120 : 550;
+    if (settings.autoWin && game.canTsumo()) {
+      await sleep(settings.fastTsumo ? 120 : 400);
       if (g !== gen || busy || game.phase !== 'discard') return;
-      doDiscard(tile.id);
+      doTsumo();
+      return;
+    }
+    if (settings.autoKan) {
+      const opts = game.kanOptions();
+      if (opts.length > 0) {
+        await sleep(wait);
+        if (g !== gen || busy || game.phase !== 'discard') return;
+        doKan(opts[0]);
+        return;
+      }
+    }
+    const tsumogiri = settings.autoTsumogiriAll || (game.riichi && settings.autoTsumogiri);
+    if (tsumogiri && !game.canTsumo() && game.kanOptions().length === 0) {
+      await sleep(wait);
+      if (g !== gen || busy || game.phase !== 'discard' || !game.drawn) return;
+      doDiscard(game.drawn.id);
     }
   }
 
@@ -366,10 +441,10 @@ const UI = (() => {
     const fromEl = els.hand.querySelector(`.tile[data-id="${tileId}"]`);
     if (!fromEl) return;
     const g = gen;
-    busy = true;
     mode = 'normal';
     selectedId = null;
     analysis = null;
+    setHover(null);
 
     const res = game.discard(tileId, declareRiichi);
     if (declareRiichi) {
@@ -379,6 +454,27 @@ const UI = (() => {
     }
 
     const fly = flyToRiver(fromEl, res);
+
+    if (settings.fastTsumo) {
+      // 簡略化: 打牌の飛行と同時に次をツモり、待ち時間（クールダウン）を置かない
+      let tile = null;
+      if (settings.autoDraw && game.phase === 'draw') {
+        tile = game.draw();
+        analysis = game.analysis();
+      }
+      renderHand(true);
+      const drawnEl = els.hand.querySelector('.tile.drawn');
+      if (drawnEl && tile) drawnEl.classList.add('enter-draw');
+      renderHeader();
+      renderStatus();
+      refreshHints();
+      renderActions();
+      if (game.phase === 'exhausted') { await fly; if (g !== gen) return; await onExhausted(g); return; }
+      if (tile) afterDraw(g, tile);
+      return;
+    }
+
+    busy = true;
     renderHand(true);
     renderHeader();
     renderStatus();
@@ -388,20 +484,23 @@ const UI = (() => {
     if (g !== gen) return;
     busy = false;
 
-    if (game.phase === 'exhausted') {
-      const r = game.exhaust();
-      log('流局', r.tenpai ? '聴牌' : 'ノーテン');
-      renderActions();
-      await sleep(300);
-      if (g !== gen) return;
-      showResult(r);
-      return;
-    }
+    if (game.phase === 'exhausted') { await onExhausted(g); return; }
     if (settings.autoDraw) {
       await sleep(230);
       if (g !== gen || busy) return;
       doDraw();
     }
+  }
+
+  async function onExhausted(g) {
+    const r = game.exhaust();
+    log('流局', r.tenpai ? '聴牌' : 'ノーテン');
+    renderStatus();
+    renderActions();
+    applyHandState();
+    await sleep(300);
+    if (g !== gen) return;
+    showResult(r);
   }
 
   async function doTsumo() {
@@ -441,14 +540,16 @@ const UI = (() => {
     log(`${game.turn}巡目`, '暗槓', res.tiles[0]);
 
     analysis = null;
-    renderHand(true);
+    setHover(null);
+    renderHand(true, { hideDrawn: true }); // 嶺上牌はまだ見せない
     const grp = els.kans.lastElementChild;
     if (grp) grp.classList.add('enter-kan');
     renderActions();
-    await sleep(380);
+    await sleep(settings.fastTsumo ? 200 : 380);
     if (g !== gen) return;
 
     // 嶺上牌ツモ・新ドラめくり
+    renderHand(false);
     const drawnEl = els.hand.querySelector('.tile.drawn');
     if (drawnEl) drawnEl.classList.add('enter-draw');
     renderHeader();
@@ -490,12 +591,42 @@ const UI = (() => {
       return;
     }
     if (game.riichi && (!game.drawn || game.drawn.id !== tileId)) return;
-    if (settings.twoClick && selectedId !== tileId) {
+    if (settings.clickMode === 'double' && selectedId !== tileId) {
       selectedId = tileId;
       applyHandState();
       return;
     }
     doDiscard(tileId);
+  }
+
+  /** キーボードからの打牌（クリックと同じ扱い。ダブルクリック設定なら2回押しで確定） */
+  const onTileKey = (tileId, kind) => onTileClick(tileId, kind);
+
+  /** ホバー中の牌種を設定し、同種牌の強調と待ちプレビューを更新 */
+  function setHover(kind) {
+    if (kind === hoverKind) return;
+    hoverKind = kind;
+    document.querySelectorAll('.tile.same').forEach((el) => el.classList.remove('same'));
+    if (kind !== null) {
+      document.querySelectorAll(`#hand .tile[data-kind="${kind}"], #river .tile[data-kind="${kind}"], #dora .tile[data-kind="${kind}"], #kans .tile[data-kind="${kind}"]`)
+        .forEach((el) => el.classList.add('same'));
+    }
+    hoverPreview = kind === null ? null : previewWaits(kind);
+    renderWaitsBox();
+  }
+
+  /** kind を切った場合に聴牌なら、その待ち（残り枚数付き）。聴牌にならなければ null */
+  function previewWaits(kind) {
+    if (!game.drawn || game.riichi || game.phase !== 'discard') return null;
+    const c = Tiles.counts(game.fullTiles());
+    if (c[kind] === 0) return null;
+    c[kind]--;
+    if (Shanten.calc(c, game.kans.length) !== 0) return null;
+    const unseen = game.unseenCounts();
+    const waits = Shanten.waits(c, game.kans.length)
+      .filter((k) => game.initialCounts[k] > 0)
+      .map((k) => ({ kind: k, left: Math.max(0, unseen[k]) }));
+    return { kind, waits };
   }
 
   // =====================================================
@@ -519,6 +650,8 @@ const UI = (() => {
     const info = Tiles.info(tile.kind);
     el.classList.add(`suit-${info.suit}`);
     if (tile.red) el.classList.add('red');
+    if (!opts.noDora && game && game.doraKinds.includes(tile.kind)) el.classList.add('dora');
+    if (hoverKind === tile.kind && !opts.noDora) el.classList.add('same');
     el.dataset.id = tile.id;
     el.dataset.kind = tile.kind;
     el.title = info.label + (tile.red ? '（赤）' : '');
@@ -532,7 +665,7 @@ const UI = (() => {
     }
     return el;
   }
-  const kindEl = (kind, size) => tileEl({ id: -1, kind, red: false }, { size });
+  const kindEl = (kind, size, noDora = false) => tileEl({ id: -1, kind, red: false }, { size, noDora });
 
   function renderHeader() {
     const rw = Tiles.WINDS[settings.roundWind];
@@ -568,18 +701,18 @@ const UI = (() => {
    * 手牌を再構築。animate=true なら FLIP で位置の移動をアニメーション。
    * ツモ牌が無いときも同じ幅の空き枠を置き、13枚のときに手牌が動かないようにする。
    */
-  function renderHand(animate) {
+  function renderHand(animate, opts = {}) {
     const before = new Map();
     if (animate) {
       els.hand.querySelectorAll('.tile[data-id]').forEach((el) => before.set(el.dataset.id, el.getBoundingClientRect()));
     }
     els.hand.innerHTML = '';
-    for (const t of game.hand) els.hand.appendChild(handTileEl(t));
+    game.hand.forEach((t, i) => els.hand.appendChild(handTileEl(t, KEY_LABELS[i] || '')));
     const gap = document.createElement('div');
     gap.className = 'hand-gap';
     els.hand.appendChild(gap);
-    if (game.drawn) {
-      const el = handTileEl(game.drawn);
+    if (game.drawn && !opts.hideDrawn) {
+      const el = handTileEl(game.drawn, 'Enter');
       el.classList.add('drawn');
       els.hand.appendChild(el);
     } else {
@@ -612,9 +745,15 @@ const UI = (() => {
     applyHandState();
   }
 
-  function handTileEl(t) {
+  function handTileEl(t, keyLabel) {
     const el = tileEl(t, { button: true, size: 'lg' });
     el.addEventListener('click', () => onTileClick(t.id, t.kind));
+    if (keyLabel) {
+      const k = document.createElement('span');
+      k.className = 'key';
+      k.textContent = keyLabel;
+      el.appendChild(k);
+    }
     return el;
   }
 
@@ -687,17 +826,27 @@ const UI = (() => {
 
   /** 卓右上の待ち表示。13枚の手牌（ツモ牌を除く）が聴牌なら常に表示する */
   function renderWaitsBox() {
-    const info = game.phase === 'end' && game.result && game.result.type === 'win' ? { shanten: 1, waits: [] } : game.handInfo();
+    const preview = hoverPreview;
+    const info = preview ? { shanten: 0, waits: preview.waits }
+      : game.phase === 'end' && game.result && game.result.type === 'win' ? { shanten: 1, waits: [] } : game.handInfo();
     if (info.shanten !== 0) {
       waitsKey = '';
       show(els.waitsBox, false);
       return;
     }
-    const key = `${game.riichi ? 'r' : ''}:${info.waits.map((w) => `${w.kind}/${w.left}`).join(',')}`;
+    const key = `${preview ? `p${preview.kind}` : game.riichi ? 'r' : ''}:${info.waits.map((w) => `${w.kind}/${w.left}`).join(',')}`;
     show(els.waitsBox, true);
+    els.waitsBox.classList.toggle('preview', !!preview);
     if (key === waitsKey) return; // 内容が同じなら再描画しない（アニメーションの再生を防ぐ）
     waitsKey = key;
-    els.waitsTitle.textContent = game.riichi ? 'リーチ ・ 待ち' : '待ち';
+    els.waitsTitle.innerHTML = '';
+    if (preview) {
+      els.waitsTitle.append('打 ');
+      els.waitsTitle.appendChild(kindEl(preview.kind, 'xs', true));
+      els.waitsTitle.append(' → 待ち');
+    } else {
+      els.waitsTitle.textContent = game.riichi ? 'リーチ ・ 待ち' : '待ち';
+    }
     els.waitsList.innerHTML = '';
     let total = 0;
     info.waits.forEach((w, i) => {
@@ -740,7 +889,7 @@ const UI = (() => {
       d.style.display = 'flex'; d.style.alignItems = 'center'; d.style.gap = '4px';
       const lbl = document.createElement('span'); lbl.className = 'lbl'; lbl.textContent = '打';
       d.appendChild(lbl);
-      d.appendChild(kindEl(r.kind, 'sm'));
+      d.appendChild(kindEl(r.kind, 'sm', true));
       row.appendChild(d);
       const n = document.createElement('div');
       n.className = 'n';
@@ -751,7 +900,7 @@ const UI = (() => {
       for (const a of r.accepts) {
         const acc = document.createElement('span');
         acc.className = 'acc';
-        acc.appendChild(kindEl(a.kind, 'xs'));
+        acc.appendChild(kindEl(a.kind, 'xs', true));
         const s = document.createElement('small');
         s.textContent = a.n;
         acc.appendChild(s);
@@ -774,6 +923,7 @@ const UI = (() => {
     show(els.btnKan, p === 'discard' && normal && kanOpts.length > 0);
     show(els.btnTsumogiri, p === 'discard' && normal && active && game.riichi && (!!win || kanOpts.length > 0));
     show(els.btnCancel, !normal);
+    show(els.btnShowResult, p === 'end' && !!game.result && !els.resultDialog.open && !auto.running);
     els.modeMsg.textContent = mode === 'riichi' ? 'リーチ宣言牌（光っている牌）を選んでください'
       : mode === 'kan' ? 'カンする牌を選んでください' : '';
     if (win) els.btnTsumo.textContent = `ツモ和了 ${win.limit ? `（${win.limit}）` : `（${win.fu}符 ${win.han}飜）`}`;

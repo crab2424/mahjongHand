@@ -38,6 +38,11 @@
     <main>
       <section class="table" id="table">
         <div class="status-row">
+          <div class="auto-toggles" id="auto-toggles" title="ツモ後に自動で行う操作">
+            <label class="tg"><input type="checkbox" id="tg-autoWin"> 自動和了</label>
+            <label class="tg"><input type="checkbox" id="tg-autoKan"> 自動カン</label>
+            <label class="tg"><input type="checkbox" id="tg-autoTsumogiriAll"> 自動ツモ切り</label>
+          </div>
           <div class="status" id="status">
             <div class="shanten" id="shanten">—</div>
             <div class="waits" id="waits"></div>
@@ -78,6 +83,7 @@
         <button class="btn accent hidden" id="btn-kan" type="button">カン</button>
         <button class="btn hidden" id="btn-tsumogiri" type="button">見逃してツモ切り</button>
         <button class="btn ghost hidden" id="btn-cancel" type="button">キャンセル</button>
+        <button class="btn hidden" id="btn-show-result" type="button">結果をもう一度見る</button>
         <span class="mode-msg" id="mode-msg"></span>
       </div>
       <div class="hand-row">
@@ -88,7 +94,7 @@
         <button class="btn reset" id="btn-reset" type="button">⟳ 配牌リセット</button>
         <button class="btn auto" id="btn-auto" type="button">▶ 自動リセット</button>
         <span class="auto-status hidden" id="auto-status"></span>
-        <span class="hint-text">牌をクリックで打牌 ／ <kbd>N</kbd> 配牌リセット ／ <kbd>A</kbd> 自動リセット ／ <kbd>Esc</kbd> 停止・キャンセル</span>
+        <span class="hint-text">牌をクリック／<kbd>1</kbd>〜<kbd>¥</kbd> で打牌 ・ <kbd>Enter</kbd> ツモ切り ／ <kbd>N</kbd> 配牌リセット ／ <kbd>A</kbd> 自動リセット ／ <kbd>Esc</kbd> 停止・キャンセル</span>
       </div>
     </footer>
   </div>
@@ -133,7 +139,15 @@
         <h3>進行</h3>
         <label class="check"><input type="checkbox" id="set-autoDraw"> 打牌後に自動でツモる</label>
         <label class="check"><input type="checkbox" id="set-autoTsumogiri"> リーチ後は自動でツモ切り（和了・カンが無いとき）</label>
-        <label class="check"><input type="checkbox" id="set-twoClick"> 打牌は2回クリックで確定</label>
+        <label class="row">
+          <span>打牌の操作</span>
+          <select id="set-clickMode">
+            <option value="single">シングルクリック（1回で打牌）</option>
+            <option value="double">ダブルクリック（1回目で選択・2回目で確定）</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="set-fastTsumo"> ツモ動作の簡略化（打牌とツモを同時に行い、連続で打牌できる）</label>
+        <label class="check"><input type="checkbox" id="set-showKeys"> 手牌の下に打牌キーを表示（<kbd>1</kbd>〜<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd> <kbd>^</kbd> <kbd>¥</kbd>、<kbd>Enter</kbd> でツモ切り）</label>
 
         <h3>配牌リセット</h3>
         <label class="check"><input type="checkbox" id="set-instantReset"> 簡略化（アニメーションを省略し、押した瞬間に切り替える）</label>
