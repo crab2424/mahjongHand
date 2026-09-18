@@ -81,6 +81,7 @@ kbd {
 .info-block .value { font-size: 14px; }
 .info-block .value b { font-size: 20px; font-variant-numeric: tabular-nums; }
 .info-block .value small { color: var(--muted); }
+.info-block .value .wall-count { font-size: 11px; margin-left: 4px; }
 .dora { display: flex; gap: 3px; margin-top: 2px; }
 .spacer { flex: 1; }
 
@@ -138,7 +139,15 @@ main {
 .toggle { font-size: 11px; display: flex; gap: 4px; align-items: center; cursor: pointer; }
 
 /* 状態表示（向聴・待ち） */
+.status-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  width: 100%;
+  gap: 8px;
+}
 .status {
+  grid-column: 2;
   text-align: center;
   min-height: 60px;
   display: flex;
@@ -146,6 +155,27 @@ main {
   align-items: center;
   gap: 4px;
 }
+/* 卓右上の待ち表示（聴牌中は常に表示） */
+.waits-box {
+  grid-column: 3;
+  justify-self: end;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(255, 213, 74, 0.35);
+  border-radius: 10px;
+  padding: 6px 10px;
+  min-width: 90px;
+  max-width: 100%;
+  animation: fadeIn 0.3s ease both;
+}
+.waits-title { font-size: 11px; color: var(--accent); letter-spacing: 0.1em; margin-bottom: 4px; white-space: nowrap; }
+.waits-list { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; font-size: 12px; }
+.waits-list .wait {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+  animation: popIn 0.35s var(--ease-out) both;
+}
+.waits-list .wait small { font-size: 10px; color: rgba(255,255,255,0.8); }
+.waits-list .wait .tile { animation: glow 1.8s ease-in-out infinite; }
+.waits-list .total { color: var(--accent); font-weight: 700; white-space: nowrap; align-self: center; }
 .shanten {
   font-size: 26px;
   font-weight: 800;
@@ -244,9 +274,12 @@ main {
   flex-direction: column;
   gap: 8px;
   padding: 6px 22px 16px;
+  min-width: 0;
+  overflow: hidden;
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
   gap: 10px;
@@ -263,17 +296,24 @@ main {
 }
 .hand { display: flex; align-items: flex-end; gap: 4px; transition: opacity 0.3s; }
 .hand-gap { width: 16px; flex: none; }
+/* ツモ牌が無いときの空き枠（手牌13枚の位置を固定するため） */
+.tile.slot { visibility: hidden; pointer-events: none; }
 .hand.leaving, .river.leaving { opacity: 0; }
 .kans { display: flex; gap: 10px; align-items: flex-end; }
 .kan-group { display: flex; gap: 2px; }
 .kan-group.enter-kan { animation: popIn 0.4s var(--ease-out) both; }
 .controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  gap: 8px 18px;
+  min-width: 0;
 }
 .hint-text { color: var(--muted); font-size: 12px; }
+.btn.auto { background: rgba(126, 224, 129, 0.16); border-color: rgba(126, 224, 129, 0.5); }
+.btn.auto.running { background: #b3402c; border-color: #e0654c; color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+.auto-status { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
 
 /* ---------- ボタン ---------- */
 .btn {
@@ -285,6 +325,7 @@ main {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
   transition: transform 0.15s, background 0.2s, box-shadow 0.2s;
 }
 .btn:hover { background: rgba(255, 255, 255, 0.18); transform: translateY(-1px); }
@@ -400,7 +441,7 @@ button.tile.locked:disabled { cursor: not-allowed; }
   pointer-events: none;
 }
 .tile .badge.best { background: var(--accent-2); color: #fff; }
-.ghost { pointer-events: none; }
+.fly-ghost { pointer-events: none; }
 
 /* ---------- 牌効率パネル ---------- */
 .hint { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
@@ -480,7 +521,21 @@ button.tile.locked:disabled { cursor: not-allowed; }
 .result-waits { display: flex; justify-content: center; gap: 8px; align-items: center; margin-top: 8px; }
 
 /* 設定 */
-.settings-card { min-width: min(480px, 90vw); display: flex; flex-direction: column; gap: 10px; }
+.settings-card { min-width: min(520px, 92vw); display: flex; flex-direction: column; gap: 10px; }
+.settings-body { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow: auto; padding-right: 4px; }
+.settings-body h3 {
+  margin: 10px 0 2px; font-size: 12px; color: var(--muted); letter-spacing: 0.12em;
+  border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 3px;
+}
+.settings-body h3:first-child { margin-top: 0; }
+.settings-body h3 small { font-weight: 400; letter-spacing: 0; margin-left: 6px; }
+.settings-card .row.sub { padding-left: 24px; font-size: 13px; }
+.settings-card .note { margin: 0; padding-left: 24px; font-size: 11px; color: var(--muted); }
+.tileset { display: flex; flex-direction: column; gap: 6px; }
+.tileset-label { font-size: 13px; }
+.tileset-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 12px; padding-left: 12px; }
+.tileset-note { color: var(--muted); font-size: 11px; padding-left: 12px; }
+.tileset-note.warn { color: var(--accent-2); }
 .settings-card .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .settings-card .check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .settings-card .check small { color: var(--muted); margin-left: 4px; }
@@ -535,6 +590,8 @@ button.tile.locked:disabled { cursor: not-allowed; }
 /* ---------- レスポンシブ ---------- */
 @media (max-width: 1000px) {
   main { grid-template-columns: 1fr; }
+  .hint-text { display: none; }
+  .info-block .value .wall-count { display: none; }
   .side { flex-direction: row; }
   .side .panel { flex: 1; max-height: 160px; overflow: auto; }
   .topbar { gap: 16px; flex-wrap: wrap; }
@@ -542,6 +599,9 @@ button.tile.locked:disabled { cursor: not-allowed; }
   .app { height: auto; min-height: 100vh; }
 }
 @media (max-width: 640px) {
+  .status-row { grid-template-columns: 1fr; }
+  .status, .waits-box { grid-column: 1; justify-self: center; }
+  .tileset-grid { grid-template-columns: 1fr; }
   .hand { gap: 2px; }
   .hand-area { padding-left: 8px; padding-right: 8px; }
   .hint-text { display: none; }

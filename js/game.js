@@ -5,6 +5,8 @@
  *
  * 山: wall（末尾から pop でツモ）、王牌: deadWall 14枚
  *   deadWall[0..3]  嶺上牌、[4..8] ドラ表示牌、[9..13] 裏ドラ表示牌
+ *
+ * 配牌時に最初のツモまで行い、14枚の状態（phase='discard', turn=1）で開始する。
  */
 class Game {
   constructor(settings) {
@@ -13,7 +15,17 @@ class Game {
   }
 
   newGame() {
-    const tiles = Tiles.shuffle(Tiles.makeWall(this.settings.redDora));
+    const s = this.settings;
+    // 配牌時の設定を固定する（局の途中で設定が変わっても影響しない）
+    this.opts = {
+      redDora: !!s.redDora,
+      simulateOthers: !!s.simulateOthers,
+      maxDraws: Math.max(0, +s.maxDraws || 0),
+      kinds: Tiles.kindsFromSettings(s),
+    };
+    const all = Tiles.makeWall(this.opts.redDora, this.opts.kinds);
+    this.initialCounts = Tiles.counts(all);
+    const tiles = Tiles.shuffle(all);
     this.deadWall = tiles.slice(0, 14);
     this.wall = tiles.slice(14);
     this.hand = Tiles.sortTiles(this.wall.splice(this.wall.length - 13, 13));
@@ -29,14 +41,23 @@ class Game {
     this.rinshan = false;
     this.result = null;
     this.phase = 'draw';
+    this.draw(); // 配牌直後に第一ツモ（14枚で開始）
   }
 
   // ---------- 参照 ----------
+  /** 山の残り枚数 */
   get remaining() { return this.wall.length; }
+  /** 自分があと何回ツモれるか（他家模擬・ツモ回数上限を考慮） */
+  get drawsLeft() {
+    let n = this.wall.length;
+    if (this.opts.simulateOthers) n = Math.ceil(n / 4);
+    if (this.opts.maxDraws > 0) n = Math.min(n, this.opts.maxDraws - this.turn);
+    return Math.max(0, n);
+  }
   get doraIndicators() { return this.deadWall.slice(4, 4 + this.doraCount); }
   get uraIndicators() { return this.deadWall.slice(9, 9 + this.doraCount); }
-  get doraKinds() { return this.doraIndicators.map((t) => Tiles.nextDora(t.kind)); }
-  get uraKinds() { return this.uraIndicators.map((t) => Tiles.nextDora(t.kind)); }
+  get doraKinds() { return this.doraIndicators.map((t) => Tiles.nextDora(t.kind, this.initialCounts)); }
+  get uraKinds() { return this.uraIndicators.map((t) => Tiles.nextDora(t.kind, this.initialCounts)); }
   get seatWind() { return this.settings.seatWind; }
   get roundWind() { return this.settings.roundWind; }
   get isDealer() { return this.seatWind === 27; }
@@ -44,9 +65,9 @@ class Game {
   /** 手牌 + ツモ牌 */
   fullTiles() { return this.drawn ? this.hand.concat([this.drawn]) : this.hand.slice(); }
 
-  /** 自分から見えていない牌の枚数（牌種ごと） */
+  /** 自分から見えていない牌の枚数（牌種ごと）。山に入れていない牌種は 0 */
   unseenCounts() {
-    const u = new Array(34).fill(4);
+    const u = this.initialCounts.slice();
     for (const t of this.fullTiles()) u[t.kind]--;
     for (const d of this.discards) u[d.tile.kind]--;
     for (const t of this.doraIndicators) u[t.kind]--;
@@ -56,7 +77,7 @@ class Game {
 
   // ---------- ツモ ----------
   draw() {
-    if (this.phase !== 'draw' || this.wall.length === 0) return null;
+    if (this.phase !== 'draw' || this.drawsLeft === 0) return null;
     this.drawn = this.wall.pop();
     this.turn++;
     this.rinshan = false;
@@ -77,7 +98,7 @@ class Game {
       riichi: this.riichi,
       doubleRiichi: this.doubleRiichi,
       ippatsu: this.ippatsu,
-      haitei: this.wall.length === 0 && !this.rinshan,
+      haitei: this.drawsLeft === 0 && !this.rinshan,
       rinshan: this.rinshan,
       tenhou: this.turn === 1 && this.discards.length === 0 && this.kans.length === 0,
       roundWind: this.roundWind,
@@ -105,7 +126,7 @@ class Game {
   // ---------- リーチ ----------
   /** リーチ宣言牌として切れる牌 id 一覧（切っても聴牌を維持できる牌） */
   riichiCandidates() {
-    if (this.riichi || this.phase !== 'discard' || this.wall.length < 4) return [];
+    if (this.riichi || this.phase !== 'discard' || this.drawsLeft < 1) return [];
     const tiles = this.fullTiles();
     const c = Tiles.counts(tiles);
     const okKinds = new Set();
@@ -181,32 +202,33 @@ class Game {
     }
     this.discards.push({ tile, tsumogiri, riichi: declareRiichi });
 
-    if (this.settings.simulateOthers) {
+    if (this.opts.simulateOthers) {
       // 他家3人のツモ分を山から減らす
       this.wall.splice(0, Math.min(3, this.wall.length));
     }
-    this.phase = this.wall.length ? 'draw' : 'exhausted';
+    this.phase = this.drawsLeft > 0 ? 'draw' : 'exhausted';
     return { tile, tsumogiri, riichi: declareRiichi };
   }
 
   // ---------- 流局 ----------
   exhaust() {
-    const c = Tiles.counts(this.hand);
-    const s = Shanten.calc(c, this.kans.length);
-    const unseen = this.unseenCounts();
-    const waits = s === 0 ? Shanten.waits(c, this.kans.length).map((k) => ({ kind: k, left: unseen[k] })) : [];
-    this.result = { type: 'draw', tenpai: s === 0, shanten: s, waits };
+    const info = this.handInfo();
+    this.result = { type: 'draw', tenpai: info.shanten === 0, shanten: info.shanten, waits: info.waits };
     this.phase = 'end';
     return this.result;
   }
 
   // ---------- 解析 ----------
-  /** 13枚（打牌後）の状態: 向聴数と待ち */
+  /** 13枚（ツモ牌を除いた手牌）の状態: 向聴数と待ち（山に無い牌種は除く） */
   handInfo() {
     const c = Tiles.counts(this.hand);
     const s = Shanten.calc(c, this.kans.length);
     const unseen = this.unseenCounts();
-    const waits = s === 0 ? Shanten.waits(c, this.kans.length).map((k) => ({ kind: k, left: unseen[k] })) : [];
+    const waits = s === 0
+      ? Shanten.waits(c, this.kans.length)
+        .filter((k) => this.initialCounts[k] > 0)
+        .map((k) => ({ kind: k, left: Math.max(0, unseen[k]) }))
+      : [];
     return { shanten: s, waits };
   }
 

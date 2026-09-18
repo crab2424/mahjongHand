@@ -55,8 +55,8 @@ const Tiles = (() => {
   const isSimple = (kind) => !isYaochu(kind);
   const YAOCHU = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
 
-  /** ドラ表示牌 → ドラ */
-  function nextDora(kind) {
+  /** 同じ系列内で次の牌種（ドラ順送り） */
+  function nextInCycle(kind) {
     if (kind < 27) {
       const base = Math.floor(kind / 9) * 9;
       return base + ((kind - base + 1) % 9);
@@ -65,11 +65,44 @@ const Tiles = (() => {
     return 31 + ((kind - 31 + 1) % 3);
   }
 
-  /** 136枚の山を生成（未シャッフル） */
-  function makeWall(useRed) {
+  /**
+   * ドラ表示牌 → ドラ
+   * avail: 山に含まれる牌種の枚数配列（省略時は全種あり）。
+   * 抜いてある牌種は飛ばす（三麻の 1m 表示 → 9m など）。
+   */
+  function nextDora(kind, avail) {
+    let k = nextInCycle(kind);
+    if (!avail) return k;
+    for (let i = 0; i < 9 && avail[k] === 0; i++) k = nextInCycle(k);
+    return k;
+  }
+
+  /** 牌種グループ（山に入れる牌の選択用） */
+  const TILE_GROUPS = [
+    { key: 'tileM19', label: '萬子 一九', kinds: [0, 8] },
+    { key: 'tileM28', label: '萬子 二〜八', kinds: [1, 2, 3, 4, 5, 6, 7] },
+    { key: 'tileP19', label: '筒子 一九', kinds: [9, 17] },
+    { key: 'tileP28', label: '筒子 二〜八', kinds: [10, 11, 12, 13, 14, 15, 16] },
+    { key: 'tileS19', label: '索子 一九', kinds: [18, 26] },
+    { key: 'tileS28', label: '索子 二〜八', kinds: [19, 20, 21, 22, 23, 24, 25] },
+    { key: 'tileZ', label: '字牌', kinds: [27, 28, 29, 30, 31, 32, 33] },
+  ];
+
+  /** 設定から山に入れる牌種の集合を返す（未指定のグループは含める） */
+  function kindsFromSettings(settings) {
+    const set = new Set();
+    for (const g of TILE_GROUPS) {
+      if (!settings || settings[g.key] !== false) for (const k of g.kinds) set.add(k);
+    }
+    return set;
+  }
+
+  /** 山を生成（未シャッフル）。kinds: 含める牌種の Set（省略時は34種すべて） */
+  function makeWall(useRed, kinds) {
     const tiles = [];
     let id = 0;
     for (let k = 0; k < 34; k++) {
+      if (kinds && !kinds.has(k)) continue;
       for (let c = 0; c < 4; c++) {
         const red = !!useRed && k < 27 && numOf(k) === 5 && c === 0;
         tiles.push({ id: id++, kind: k, red });
@@ -129,8 +162,8 @@ const Tiles = (() => {
   }
 
   return {
-    KINDS, WINDS, YAOCHU, KANJI_NUM,
+    KINDS, WINDS, YAOCHU, KANJI_NUM, TILE_GROUPS,
     info, suitOf, numOf, isHonor, isWind, isDragon, isTerminal, isYaochu, isSimple,
-    nextDora, makeWall, shuffle, sortTiles, counts, shantenLabel, parse,
+    nextDora, makeWall, kindsFromSettings, shuffle, sortTiles, counts, shantenLabel, parse,
   };
 })();

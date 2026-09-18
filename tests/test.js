@@ -176,13 +176,13 @@ console.log('役・点数');
 }
 
 console.log('ゲーム進行');
+const S = (o = {}) => Object.assign({ redDora: true, simulateOthers: false, maxDraws: 0, seatWind: 27, roundWind: 27 }, o);
 {
-  const g = new Game({ redDora: true, simulateOthers: false, seatWind: 27, roundWind: 27 });
-  eq(g.hand.length, 13, '配牌13枚');
-  eq(g.remaining, 109, '残り山 136-14-13');
+  const g = new Game(S());
+  eq([g.hand.length, g.fullTiles().length, g.turn, g.phase], [13, 14, 1, 'discard'], '配牌直後に第一ツモ済み（14枚）');
+  eq(g.remaining, 108, '残り山 136-14-13-1');
+  eq(g.drawsLeft, 108, '残りツモ回数 = 山の枚数');
   eq(g.doraIndicators.length, 1, 'ドラ表示1枚');
-  g.draw();
-  eq([g.turn, g.fullTiles().length, g.phase], [1, 14, 'discard'], 'ツモ後14枚');
   const a = g.analysis();
   eq(a.length > 0, true, '解析結果あり');
   g.discard(g.drawn.id);
@@ -194,17 +194,56 @@ console.log('ゲーム進行');
   eq(r.type, 'draw', '流局');
 }
 {
-  const g = new Game({ redDora: false, simulateOthers: true, seatWind: 28, roundWind: 27 });
-  let n = 0;
-  while (g.phase === 'draw') { g.draw(); g.discard(g.drawn.id); n++; }
+  const g = new Game(S({ redDora: false, simulateOthers: true, seatWind: 28 }));
+  eq(g.drawsLeft, 27, '他家模擬: 残りツモ = ceil(108/4)');
+  let n = 1;
+  while (g.phase !== 'exhausted') { g.discard(g.drawn.id); if (g.phase === 'draw') { g.draw(); n++; } }
   eq(n, 28, '他家模擬で 28巡 (109 → 1 + 3 ずつ)');
   eq(g.isDealer, false, '南家は子');
 }
 {
+  const g = new Game(S({ maxDraws: 18 }));
+  eq(g.drawsLeft, 17, 'ツモ上限18: 配牌ツモ後の残りは17');
+  let n = 1;
+  while (g.phase !== 'exhausted') { g.discard(g.drawn.id); if (g.phase === 'draw') { g.draw(); n++; } }
+  eq([n, g.turn, g.remaining > 0], [18, 18, true], 'ツモ上限18で流局（山は残っている）');
+  const h = new Game(S({ maxDraws: 2 }));
+  eq(h.winContext().haitei, false, '1巡目は海底ではない');
+  h.discard(h.drawn.id); h.draw();
+  eq([h.turn, h.drawsLeft, h.winContext().haitei], [2, 0, true], '上限最後のツモは海底扱い');
+}
+{
+  // 三麻（萬子は一九のみ）
+  const g = new Game(S({ tileM28: false }));
+  eq(g.initialCounts.slice(0, 9), [4, 0, 0, 0, 0, 0, 0, 0, 4], '萬子 2〜8 が山に無い');
+  eq(g.remaining, 108 - 28, '三麻の山は 28 枚少ない');
+  eq(g.unseenCounts()[4], 0, '5m の未見枚数は 0');
+  eq(Tiles.nextDora(0, g.initialCounts), 8, '三麻: 1m 表示のドラは 9m');
+  eq(Tiles.nextDora(8, g.initialCounts), 0, '三麻: 9m 表示のドラは 1m');
+  eq(Tiles.nextDora(0), 1, '四麻: 1m 表示のドラは 2m');
+  const all = new Set(g.fullTiles().map((t) => t.kind).filter((k) => k >= 1 && k <= 7));
+  eq(all.size, 0, '手牌に 2〜8m が無い');
+  // 受け入れ・待ちから山に無い牌種が除かれる
+  g.hand = Tiles.sortTiles(P('99m123p456p789s11z'));
+  g.drawn = { id: 999, kind: 30, red: false };
+  const rows = g.analysis();
+  const drop9m = rows.find((r) => r.kind === 8);
+  eq(drop9m.accepts.some((a) => a.kind >= 1 && a.kind <= 7), false, '受け入れに 2〜8m を含めない');
+  g.hand = Tiles.sortTiles(P('99m123p456p789s11z')); // 9m / 1z シャンポン待ち
+  const w = g.handInfo();
+  eq(w.shanten, 0, '聴牌');
+  eq(w.waits.map((x) => x.kind), [8, 27], '待ちは 9m と 東');
+  eq(w.waits.every((x) => g.initialCounts[x.kind] > 0), true, '待ちは山にある牌種のみ');
+}
+{
+  eq(Tiles.makeWall(false).length, 136, '全種で 136 枚');
+  eq(Tiles.makeWall(false, Tiles.kindsFromSettings({ tileZ: false })).length, 108, '字牌抜きで 108 枚');
+  eq(Tiles.makeWall(true, Tiles.kindsFromSettings({ tileM28: false })).filter((t) => t.red).length, 2, '三麻では赤は 2 枚');
+}
+{
   // カンのテスト: 手牌を差し替える
-  const g = new Game({ redDora: false, simulateOthers: false, seatWind: 27, roundWind: 27 });
+  const g = new Game(S({ redDora: false }));
   g.hand = Tiles.sortTiles(P('1111m234p567s99s1z'));
-  g.draw();
   eq(g.kanOptions(), [0], '1m 暗槓可');
   const before = g.remaining;
   g.kan(0);
@@ -213,9 +252,8 @@ console.log('ゲーム進行');
 }
 {
   // リーチ → 一発ツモ
-  const g = new Game({ redDora: false, simulateOthers: false, seatWind: 27, roundWind: 27 });
+  const g = new Game(S({ redDora: false }));
   g.hand = Tiles.sortTiles(P('234m567m45p678s99s'));
-  g.draw();
   const drawn = g.drawn;
   eq(g.riichiCandidates().includes(drawn.id) || g.riichiCandidates().length > 0, true, 'リーチ可能');
   g.discard(drawn.id, true);
@@ -225,6 +263,11 @@ console.log('ゲーム進行');
   g.draw();
   const r = g.canTsumo();
   eq(names(r).slice(0, 3), ['ダブル立直', '一発', '門前清自摸和'], 'ダブリー一発ツモ');
+  // 天和判定: 配牌直後に和了形
+  const t = new Game(S({ redDora: false }));
+  t.hand = Tiles.sortTiles(P('123m456p789s11z22z'));
+  t.drawn = { id: 998, kind: 28, red: false };
+  eq(names(t.canTsumo()), ['天和'], '配牌14枚で和了形なら天和');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

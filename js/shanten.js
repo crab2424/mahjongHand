@@ -115,8 +115,8 @@ const Shanten = (() => {
         c[k]++;
         if (calc(c, fixedMelds) < r.shanten) {
           const n = Math.max(0, unseen ? unseen[k] : 4 - c14[k]);
-          r.accepts.push({ kind: k, n });
-          r.total += n;
+          // 残り枚数 0（山に無い・全て見えている）の牌は受け入れに数えない
+          if (n > 0) { r.accepts.push({ kind: k, n }); r.total += n; }
         }
         c[k]--;
       }

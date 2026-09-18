@@ -23,8 +23,8 @@
         <div class="dora" id="dora"></div>
       </div>
       <div class="info-block">
-        <span class="label">残り牌</span>
-        <span class="value"><b id="remaining">0</b><small> 枚</small></span>
+        <span class="label">残りツモ</span>
+        <span class="value"><b id="remaining">0</b><small> 回</small><small class="wall-count" id="wall-count"></small></span>
       </div>
       <div class="info-block">
         <span class="label">巡目</span>
@@ -37,9 +37,15 @@
     <!-- ===== メイン: 卓と情報パネル ===== -->
     <main>
       <section class="table" id="table">
-        <div class="status" id="status">
-          <div class="shanten" id="shanten">—</div>
-          <div class="waits" id="waits"></div>
+        <div class="status-row">
+          <div class="status" id="status">
+            <div class="shanten" id="shanten">—</div>
+            <div class="waits" id="waits"></div>
+          </div>
+          <div class="waits-box hidden" id="waits-box">
+            <div class="waits-title" id="waits-title">待ち</div>
+            <div class="waits-list" id="waits-list"></div>
+          </div>
         </div>
         <div class="river-wrap">
           <div class="river" id="river"></div>
@@ -80,7 +86,9 @@
       </div>
       <div class="controls">
         <button class="btn reset" id="btn-reset" type="button">⟳ 配牌リセット</button>
-        <span class="hint-text">牌をクリックで打牌 ／ <kbd>N</kbd> 配牌リセット ／ <kbd>Esc</kbd> キャンセル</span>
+        <button class="btn auto" id="btn-auto" type="button">▶ 自動リセット</button>
+        <span class="auto-status hidden" id="auto-status"></span>
+        <span class="hint-text">牌をクリックで打牌 ／ <kbd>N</kbd> 配牌リセット ／ <kbd>A</kbd> 自動リセット ／ <kbd>Esc</kbd> 停止・キャンセル</span>
       </div>
     </footer>
   </div>
@@ -100,28 +108,91 @@
   <dialog class="modal" id="settings-dialog">
     <form class="modal-card settings-card" method="dialog">
       <h2>設定</h2>
-      <label class="row">
-        <span>牌の表示</span>
-        <select id="set-display">
-          <option value="glyph">麻雀牌の文字（🀇 🀙 🀐）</option>
-          <option value="text">数字＋文字（5萬 / 東）</option>
-        </select>
-      </label>
-      <label class="row">
-        <span>場風</span>
-        <select id="set-roundWind"><option value="27">東</option><option value="28">南</option></select>
-      </label>
-      <label class="row">
-        <span>自風</span>
-        <select id="set-seatWind">
-          <option value="27">東（親）</option><option value="28">南</option><option value="29">西</option><option value="30">北</option>
-        </select>
-      </label>
-      <label class="check"><input type="checkbox" id="set-autoDraw"> 打牌後に自動でツモる</label>
-      <label class="check"><input type="checkbox" id="set-autoTsumogiri"> リーチ後は自動でツモ切り（和了・カンが無いとき）</label>
-      <label class="check"><input type="checkbox" id="set-twoClick"> 打牌は2回クリックで確定</label>
-      <label class="check"><input type="checkbox" id="set-redDora"> 赤ドラあり（赤5 各色1枚）<small>次の配牌から</small></label>
-      <label class="check"><input type="checkbox" id="set-simulateOthers"> 他家のツモを模擬（1巡で山が4枚減る・約28巡）<small>次の配牌から</small></label>
+      <div class="settings-body">
+        <h3>表示</h3>
+        <label class="row">
+          <span>牌の表示</span>
+          <select id="set-display">
+            <option value="glyph">麻雀牌の文字（🀇 🀙 🀐）</option>
+            <option value="text">数字＋文字（5萬 / 東）</option>
+          </select>
+        </label>
+
+        <h3>局</h3>
+        <label class="row">
+          <span>場風</span>
+          <select id="set-roundWind"><option value="27">東</option><option value="28">南</option></select>
+        </label>
+        <label class="row">
+          <span>自風</span>
+          <select id="set-seatWind">
+            <option value="27">東（親）</option><option value="28">南</option><option value="29">西</option><option value="30">北</option>
+          </select>
+        </label>
+
+        <h3>進行</h3>
+        <label class="check"><input type="checkbox" id="set-autoDraw"> 打牌後に自動でツモる</label>
+        <label class="check"><input type="checkbox" id="set-autoTsumogiri"> リーチ後は自動でツモ切り（和了・カンが無いとき）</label>
+        <label class="check"><input type="checkbox" id="set-twoClick"> 打牌は2回クリックで確定</label>
+
+        <h3>配牌リセット</h3>
+        <label class="check"><input type="checkbox" id="set-instantReset"> 簡略化（アニメーションを省略し、押した瞬間に切り替える）</label>
+        <label class="check"><input type="checkbox" id="set-autoReset"> 自動リセット（条件を満たす配牌が出るまで繰り返す）</label>
+        <label class="row sub">
+          <span>実行間隔</span>
+          <select id="set-autoResetInterval">
+            <option value="10000">10秒ごとに1回</option>
+            <option value="5000">5秒ごとに1回</option>
+            <option value="3000">3秒ごとに1回</option>
+            <option value="2000">2秒ごとに1回</option>
+            <option value="1000">1秒ごとに1回</option>
+            <option value="500">1秒に2回（高速）</option>
+            <option value="200">1秒に5回（高速）</option>
+            <option value="100">1秒に10回（高速）</option>
+            <option value="33">1秒に30回（高速）</option>
+            <option value="10">1秒に100回（高速）</option>
+            <option value="1">1秒に1000回（最速）</option>
+          </select>
+        </label>
+        <label class="row sub">
+          <span>停止条件（14枚の向聴数）</span>
+          <select id="set-autoResetShanten">
+            <option value="-1">和了形（天和）</option>
+            <option value="0">聴牌以下（ダブルリーチ）</option>
+            <option value="1">一向聴以下</option>
+            <option value="2">二向聴以下</option>
+            <option value="3">三向聴以下</option>
+          </select>
+        </label>
+        <p class="note">高速（1秒に2回以上）ではアニメーションを省略し、表示も間引きます。</p>
+
+        <h3>牌・山 <small>次の配牌から</small></h3>
+        <label class="check"><input type="checkbox" id="set-redDora"> 赤ドラあり（赤5 各色1枚）</label>
+        <div class="tileset">
+          <span class="tileset-label">山に入れる牌</span>
+          <div class="tileset-grid">
+            <label class="check"><input type="checkbox" id="set-tileM19"> 萬子 一九</label>
+            <label class="check"><input type="checkbox" id="set-tileM28"> 萬子 二〜八</label>
+            <label class="check"><input type="checkbox" id="set-tileP19"> 筒子 一九</label>
+            <label class="check"><input type="checkbox" id="set-tileP28"> 筒子 二〜八</label>
+            <label class="check"><input type="checkbox" id="set-tileS19"> 索子 一九</label>
+            <label class="check"><input type="checkbox" id="set-tileS28"> 索子 二〜八</label>
+            <label class="check"><input type="checkbox" id="set-tileZ"> 字牌</label>
+          </div>
+          <small class="tileset-note" id="tileset-note"></small>
+        </div>
+        <label class="row">
+          <span>ツモ回数の上限</span>
+          <select id="set-maxDraws">
+            <option value="0">なし（山が尽きるまで）</option>
+            <option value="27">27回</option>
+            <option value="18">18回（実戦相当）</option>
+            <option value="12">12回</option>
+            <option value="9">9回</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="set-simulateOthers"> 他家のツモを模擬（1巡で山が4枚減る）</label>
+      </div>
       <div class="modal-actions">
         <button class="btn primary" value="close">閉じる</button>
       </div>
