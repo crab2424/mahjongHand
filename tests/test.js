@@ -293,34 +293,42 @@ console.log('条件付き自動ツモ切り');
   const A = AutoDiscard;
   const ctx = { doraKinds: [4], roundWind: 27, seatWind: 28 };
   const T = (s) => P(s)[0];
-  const rule = (o) => Object.assign(A.newRule(), o);
-  const sSimple = rule({ suits: ['s'], nums: ['simple'] });
-  eq([A.matches(T('5s'), sSimple, ctx), A.matches(T('9s'), sSimple, ctx), A.matches(T('5m'), sSimple, ctx)], [true, false, false], '索子かつ中張');
-  const yao = rule({ nums: ['yaochu'] });
-  eq([A.matches(T('1m'), yao, ctx), A.matches(T('7z'), yao, ctx), A.matches(T('2p'), yao, ctx)], [true, true, false], '么九は字牌を含む');
-  const d = rule({ dora: ['dora', 'red'] });
-  eq([A.matches(T('5m'), d, ctx), A.matches(T('0p'), d, ctx), A.matches(T('5p'), d, ctx)], [true, true, false], '表ドラ・赤ドラ');
-  const y = rule({ yakuhai: true });
-  eq([1, 2, 3, 4, 5, 7].map((n) => A.matches(T(`${n}z`), y, ctx)), [true, true, false, false, true, true], '役牌（場風東・自風南・三元）');
-  eq(A.isActive(A.newRule()), false, '条件なしのルールは無効');
-  eq(A.isActive(rule({ kinds: [33], enabled: false })), false, '無効化したルール');
+  const cfg = (o) => A.normalize(o);
+  const m = (tile, key) => A.matches(T(tile), key, ctx);
+  eq([m('5s', 'suit:s'), m('5m', 'suit:s'), m('1z', 'suit:wind'), m('7z', 'suit:dragon')], [true, false, true, true], '種類');
+  eq([m('1m', 'num:yaochu'), m('7z', 'num:yaochu'), m('2p', 'num:yaochu'), m('5p', 'num:simple'), m('3s', 'num:3'), m('3z', 'num:3')],
+    [true, true, false, true, true, false], '数字（么九は字牌を含む。1〜9 は数牌のみ）');
+  eq([m('5m', 'dora:dora'), m('0p', 'dora:red'), m('5p', 'dora:red')], [true, true, false], '表ドラ・赤ドラ');
+  eq([1, 2, 3, 4, 5, 7].map((n) => m(`${n}z`, 'yakuhai')), [true, true, false, false, true, true], '役牌（場風東・自風南・三元）');
+  eq(m('7z', 'kind:33'), true, '特定の牌');
 
-  const rules = [rule({ kinds: [33], count: 2, countMode: 'hold' }), rule({ dora: ['dora'], count: 1, countMode: 'draw' })];
-  const held = P('77z123m');
-  let prog = A.progress(rules, [0, 0], held, ctx);
-  eq(prog.map((x) => [x.have, x.done]), [[2, true], [0, false]], '保持数とツモ累計の進捗');
-  eq([A.goalReached(prog, 'or'), A.goalReached(prog, 'and')], [true, false], 'OR / AND');
-  prog = A.progress(rules, [0, 1], held, ctx);
-  eq(A.goalReached(prog, 'and'), true, 'AND すべて達成');
+  const old = A.normalize({ combine: 'and', rules: [{ suits: ['m', 'p'], nums: [], dora: ['red'], yakuhai: false, kinds: [33], count: 3, countMode: 'hold', enabled: true }] });
+  eq([old.combine, old.countMode, old.items], ['and', 'hold', [{ key: 'suit:m', count: 3 }, { key: 'suit:p', count: 3 }, { key: 'dora:red', count: 3 }, { key: 'kind:33', count: 3 }]], '旧形式のルールを項目に移行');
+  eq(A.normalize({ items: [{ key: 'bogus', count: 2 }, { key: 'kind:40', count: 1 }] }).items, [], '不正な項目は捨てる');
+
+  // 項目ごとの目標枚数（萬子5枚・筒子3枚）
+  const two = cfg({ items: [{ key: 'suit:m', count: 5 }, { key: 'suit:p', count: 3 }], countMode: 'draw' });
+  const draws = {};
+  for (const t of P('1m2m3p4p')) A.countDraw(draws, t, two, ctx);
+  let prog = A.progress(two, draws, [], ctx);
+  eq(prog.map((x) => [x.have, x.need]), [[2, 5], [2, 3]], 'ツモ累計は項目ごとに数える');
+  eq(A.goalReached(prog, two), false, '複数種でも1枚では止まらない');
+  A.countDraw(draws, T('5p'), two, ctx);
+  prog = A.progress(two, draws, [], ctx);
+  eq([A.goalReached(prog, two), A.goalReached(prog, Object.assign({}, two, { combine: 'and' }))], [true, false], 'OR は1項目達成、AND は全項目');
+  const sum = Object.assign({}, two, { combine: 'sum', total: 5 });
+  eq(A.goalReached(A.progress(sum, draws, [], ctx), sum), true, '合計5枚（萬2＋筒3）で達成');
+  const hold = cfg({ items: [{ key: 'kind:33', count: 2 }], countMode: 'hold' });
+  eq(A.progress(hold, {}, P('77z123m'), ctx)[0].done, true, '保持数');
 
   // 手出し: 欲しくない牌のうち牌効率で最も不要な牌
-  const want = [rule({ suits: ['s'] })];
+  const want = cfg({ items: [{ key: 'suit:s', count: 1 }] });
   const tiles = P('123s456s789s1m5p9p11z');
   const rows = Shanten.analyzeDiscards(Tiles.counts(tiles), 0);
   const pick = A.pickDiscard(tiles, want, ctx, rows, () => 0);
-  eq(pick.kind !== 27 && [0, 13, 17].includes(pick.kind), true, '索子と対子を残して孤立牌を切る');
+  eq([0, 13, 17].includes(pick.kind), true, '索子と対子を残して孤立牌を切る');
   eq(A.pickDiscard(P('123s456s789s11s'), want, ctx, rows), null, '全部欲しい牌なら候補なし');
-  eq(A.pickDiscard(P('0p5p'), [rule({ kinds: [33] })], ctx, [], () => 0).red, false, '同種なら赤でない方を切る');
+  eq(A.pickDiscard(P('0p5p'), cfg({ items: [{ key: 'kind:33', count: 1 }] }), ctx, [], () => 0).red, false, '同種なら赤でない方を切る');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

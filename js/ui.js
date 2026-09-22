@@ -16,8 +16,8 @@ const UI = (() => {
     showKeys: true,          // 手牌の下にキー表示
     autoWin: false,          // 自動和了
     autoKan: false,          // 自動カン
-    autoTsumogiriAll: false, // 常に自動ツモ切り
-    autoDiscard: { combine: 'or', rules: [] }, // 条件付き自動ツモ切り（欲しい牌の条件）
+    autoTsumogiriAll: false, // 自動ツモ切り（下のボタン。条件があれば欲しい牌が来るまで）
+    autoDiscard: null,       // 自動ツモ切りの欲しい牌の条件（AutoDiscard.normalize で補完）
     hints: true,
     simulateOthers: false,
     maxDraws: 0,
@@ -37,7 +37,7 @@ const UI = (() => {
   ];
   const TILE_KEYS = Tiles.TILE_GROUPS.map((g) => g.key);
   const MIN_WALL_TILES = 40;   // 王牌14 + 配牌13 + 最低限のツモ
-  const AUTO_KEYS = ['autoWin', 'autoKan', 'autoTsumogiriAll']; // 卓上のトグル
+  const AUTO_KEYS = ['autoWin', 'autoKan']; // 卓上のトグル
   // キーボード打牌: 手牌の左から順に対応するキー（JIS 配列の数字キー列）
   const KEY_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '^', '¥'];
   const KEY_CODES = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal', 'IntlYen'];
@@ -51,6 +51,7 @@ const UI = (() => {
     kan: ['g', 'k'],
     tsumo: ['h', 't'],
     pass: ['p'],
+    autoDiscard: ['z', 'j'], // 自动 zìdòng / 自動 jidō
   };
 
   let settings;
@@ -66,8 +67,7 @@ const UI = (() => {
   let hoverPreview = null;   // ホバー中の牌を切った場合の待ち（聴牌になる場合のみ）
   const auto = { running: false, timer: null, count: 0, lastRender: 0 };
   // 条件付き自動ツモ切りの状態（ツモ累計・目標達成で停止中か）
-  const ad = { counts: [], countedId: null, stopped: false };
-  const MAX_AD_RULES = 6;
+  const ad = { draws: {}, countedId: null, stopped: false };
   const els = {};
 
   // =====================================================
@@ -81,7 +81,7 @@ const UI = (() => {
       'btn-draw', 'btn-tsumo', 'btn-riichi', 'btn-kan', 'btn-tsumogiri', 'btn-cancel', 'mode-msg',
       'btn-reset', 'btn-auto', 'auto-status', 'btn-settings', 'chk-hints', 'result-dialog', 'settings-dialog',
       'result-body', 'btn-result-next', 'btn-result-close', 'btn-show-result', 'table', 'tileset-note', 'settings-tabs',
-      'ad-editor', 'ad-progress',
+      'ad-editor', 'ad-progress', 'btn-autodiscard',
     ];
     for (const id of ids) els[camel(id)] = document.getElementById(id);
     document.body.dataset.display = settings.display;
@@ -90,6 +90,7 @@ const UI = (() => {
     buildAdEditor();
     syncSettingsForm();
     syncAutoUI();
+    syncAutoDiscardButton();
     newGame();
   }
 
@@ -106,11 +107,7 @@ const UI = (() => {
     if (s.twoClick) { s.clickMode = 'double'; delete s.twoClick; } // 旧設定の移行
     if (!s.imageDisplayMigrated) { s.display = 'image'; s.imageDisplayMigrated = true; } // 画像表示を既定に（1回だけ）
     if (countTiles(s) < MIN_WALL_TILES) for (const k of TILE_KEYS) s[k] = true;
-    const adIn = s.autoDiscard && Array.isArray(s.autoDiscard.rules) ? s.autoDiscard : DEFAULTS.autoDiscard;
-    s.autoDiscard = {
-      combine: adIn.combine === 'and' ? 'and' : 'or',
-      rules: adIn.rules.slice(0, MAX_AD_RULES).map((r) => Object.assign(AutoDiscard.newRule(), r)),
-    };
+    s.autoDiscard = AutoDiscard.normalize(s.autoDiscard);
     return s;
   }
   function saveSettings() {
@@ -126,6 +123,7 @@ const UI = (() => {
   function bindEvents() {
     els.btnReset.addEventListener('click', () => { stopAuto(); resetGame(); });
     els.btnAuto.addEventListener('click', () => toggleAuto());
+    els.btnAutodiscard.addEventListener('click', () => toggleAutoDiscard());
     els.btnSettings.addEventListener('click', () => els.settingsDialog.showModal());
     els.settingsTabs.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-tab]');
@@ -157,7 +155,6 @@ const UI = (() => {
       el.addEventListener('change', async () => {
         settings[key] = el.checked;
         saveSettings();
-        if (key === 'autoTsumogiriAll') { resetAd(); renderAdProgress(); }
         if (!el.checked) return;
         // ON にした瞬間にも適用（アニメーション中なら終わるまで待つ）
         const g = gen;
@@ -216,6 +213,7 @@ const UI = (() => {
       }
       else if (!mod && k === 'n') { stopAuto(); resetGame(); }
       else if (!mod && k === 'a') toggleAuto();
+      else if (!mod && ACTION_KEYS.autoDiscard.includes(k)) toggleAutoDiscard();
       else if (e.key === ' ') { if (isShown(els.btnDraw)) { e.preventDefault(); doDraw(); } }
       else if (e.key === 'Enter') {
         if (isShown(els.btnDraw)) { e.preventDefault(); doDraw(); }
@@ -501,42 +499,60 @@ const UI = (() => {
 
   // ---------- 条件付き自動ツモ切り ----------
   function resetAd() {
-    ad.counts = [];
+    ad.draws = {};
     ad.countedId = null;
     ad.stopped = false;
   }
   const adCtx = () => ({ doraKinds: game.doraKinds, roundWind: settings.roundWind, seatWind: settings.seatWind });
   const adHeld = () => game.fullTiles().concat(...game.kans.map((k) => k.tiles));
-  function adProgress() {
-    return AutoDiscard.progress(settings.autoDiscard.rules, ad.counts, adHeld(), adCtx());
+  const adProgress = () => AutoDiscard.progress(settings.autoDiscard, ad.draws, adHeld(), adCtx());
+
+  /** 自動ツモ切りの ON/OFF（下のボタン・Z キー）。ON にするたびにカウントをリセット */
+  async function toggleAutoDiscard() {
+    settings.autoTsumogiriAll = !settings.autoTsumogiriAll;
+    saveSettings();
+    resetAd();
+    syncAutoDiscardButton();
+    renderAdProgress();
+    if (!settings.autoTsumogiriAll) return;
+    // ON にした瞬間にも適用（アニメーション中なら終わるまで待つ）
+    const g = gen;
+    for (let i = 0; i < 30 && busy; i++) await sleep(100);
+    if (g === gen && !busy) afterDraw(g, game.drawn);
+  }
+  function syncAutoDiscardButton() {
+    const on = !!settings.autoTsumogiriAll;
+    els.btnAutodiscard.classList.toggle('running', on);
+    els.btnAutodiscard.setAttribute('aria-pressed', String(on));
+    els.btnAutodiscard.querySelector('.lbl').textContent = on ? '■ 自動ツモ切り中' : '▶ 自動ツモ切り';
   }
 
   /**
-   * 自動ツモ切り（卓のトグル）で切る牌の id。止まる場合は null。
+   * 自動ツモ切りで切る牌の id。止まる場合は null。
    * 条件が無ければ常にツモ切り。条件があれば、欲しくない牌はツモ切り、欲しい牌なら
    * 手牌の欲しくない牌（牌効率で最も不要）を手出しし、目標に達したら止まる。
    */
   function autoDiscardTarget() {
-    const rules = AutoDiscard.activeRules(settings.autoDiscard.rules);
-    if (rules.length === 0) return game.drawn.id;
+    const cfg = settings.autoDiscard;
+    if (!AutoDiscard.isActive(cfg)) return game.drawn.id;
     if (ad.stopped) return null;
     const ctx = adCtx();
     const tile = game.drawn;
     if (tile.id !== ad.countedId) {
       ad.countedId = tile.id;
-      rules.forEach((r, i) => { if (AutoDiscard.matches(tile, r, ctx)) ad.counts[i] = (ad.counts[i] || 0) + 1; });
+      AutoDiscard.countDraw(ad.draws, tile, cfg, ctx);
     }
     const prog = adProgress();
-    renderAdProgress(prog);
-    if (AutoDiscard.goalReached(prog, settings.autoDiscard.combine)) {
+    if (AutoDiscard.goalReached(prog, cfg)) {
       ad.stopped = true;
       renderAdProgress(prog);
       showToast('目標達成', true);
       log(`${game.turn}巡目`, '自動ツモ切り 目標達成');
       return null;
     }
-    if (game.riichi || !AutoDiscard.isWanted(tile, rules, ctx)) return tile.id;
-    const pick = AutoDiscard.pickDiscard(game.fullTiles(), rules, ctx, analysis || game.analysis());
+    renderAdProgress(prog);
+    if (game.riichi || !AutoDiscard.isWanted(tile, cfg, ctx)) return tile.id;
+    const pick = AutoDiscard.pickDiscard(game.fullTiles(), cfg, ctx, analysis || game.analysis());
     if (!pick) {
       ad.stopped = true;
       renderAdProgress(prog);
@@ -546,155 +562,168 @@ const UI = (() => {
     return pick.id;
   }
 
-  /** 卓左上のトグル下に進捗を表示 */
+  /** 自動ツモ切りボタンの横に進捗を表示 */
   function renderAdProgress(prog) {
     const el = els.adProgress;
-    const rules = AutoDiscard.activeRules(settings.autoDiscard.rules);
-    if (!settings.autoTsumogiriAll || rules.length === 0 || !game) { el.innerHTML = ''; show(el, false); return; }
+    const cfg = settings.autoDiscard;
+    if (!settings.autoTsumogiriAll || !AutoDiscard.isActive(cfg) || !game) { el.innerHTML = ''; show(el, false); return; }
     prog = prog || adProgress();
     el.innerHTML = '';
-    prog.forEach((p) => {
-      const row = document.createElement('div');
-      row.className = 'adp-row' + (p.done ? ' done' : '');
-      row.textContent = `${AutoDiscard.describe(p.rule)} ${Math.min(p.have, p.need)}/${p.need}${p.rule.countMode === 'hold' ? '' : '枚'}`;
-      el.appendChild(row);
+    const MAX_SHOWN = 4;
+    prog.slice(0, MAX_SHOWN).forEach((p) => {
+      const item = document.createElement('span');
+      item.className = 'adp-item' + (p.done ? ' done' : '');
+      item.textContent = `${p.label} ${Math.min(p.have, p.need)}/${p.need}`;
+      el.appendChild(item);
     });
-    if (prog.length > 1) {
-      const c = document.createElement('div');
-      c.className = 'adp-mode';
-      c.textContent = settings.autoDiscard.combine === 'and' ? 'すべて達成で停止' : 'どれか達成で停止';
-      el.appendChild(c);
+    if (prog.length > MAX_SHOWN) {
+      const more = document.createElement('span');
+      more.className = 'adp-item';
+      more.textContent = `他${prog.length - MAX_SHOWN}`;
+      el.appendChild(more);
     }
     if (ad.stopped) {
-      const st = document.createElement('div');
+      const st = document.createElement('span');
       st.className = 'adp-stop';
-      st.textContent = '停止中（トグルを入れ直すと再開）';
+      st.textContent = '停止中';
       el.appendChild(st);
     }
+    el.title = prog.map((p) => `${p.label} ${p.have}/${p.need}`).join('\n');
     show(el, true);
   }
 
-  /** 設定「自動」タブのルール編集 UI */
+  /** 設定「自動」タブの欲しい牌の条件エディタ */
   function buildAdEditor() {
     const root = els.adEditor;
     const cfg = settings.autoDiscard;
-    const changed = (rebuild = false) => {
+    const changed = () => {
       saveSettings();
       resetAd();
       renderAdProgress();
-      if (rebuild) buildAdEditor();
+      refreshEditor();
     };
     root.innerHTML = '';
 
-    const head = document.createElement('label');
-    head.className = 'row';
-    head.innerHTML = '<span>複数ルールの停止条件</span>';
+    // 上段: 停止条件・数え方・合計枚数（横に揃える）
+    const head = document.createElement('div');
+    head.className = 'ad-head';
+    const field = (label, control) => {
+      const f = document.createElement('label');
+      f.className = 'ad-field';
+      const l = document.createElement('span');
+      l.textContent = label;
+      f.append(l, control);
+      head.appendChild(f);
+      return f;
+    };
     const comb = document.createElement('select');
-    comb.innerHTML = '<option value="or">どれか1つ達成で停止（OR）</option><option value="and">すべて達成で停止（AND）</option>';
+    comb.innerHTML = '<option value="or">どれか1つ達成（OR）</option><option value="and">すべて達成（AND）</option><option value="sum">合計枚数</option>';
     comb.value = cfg.combine;
     comb.addEventListener('change', () => { cfg.combine = comb.value; changed(); });
-    head.appendChild(comb);
+    field('停止条件', comb);
+    const mode = document.createElement('select');
+    mode.innerHTML = '<option value="draw">ツモった枚数（累計）</option><option value="hold">手牌に持つ枚数</option>';
+    mode.value = cfg.countMode;
+    mode.addEventListener('change', () => { cfg.countMode = mode.value; changed(); });
+    field('数え方', mode);
+    const total = countInput(cfg.total, (v) => { cfg.total = v; changed(); });
+    const totalField = field('合計枚数', total);
     root.appendChild(head);
 
-    const CHIPS = [
-      ['suits', '種類', [['m', '萬子'], ['p', '筒子'], ['s', '索子'], ['wind', '風牌'], ['dragon', '三元牌']]],
-      ['nums', '数字', [['yaochu', '么九（1・9・字）'], ['simple', '中張（2〜8）'], ...'123456789'.split('').map((n) => [n, n])]],
-      ['dora', 'ドラ', [['dora', 'ドラ（カンドラ含む）'], ['red', '赤ドラ']]],
-    ];
-    cfg.rules.forEach((rule, idx) => {
-      const card = document.createElement('div');
-      card.className = 'ad-rule' + (rule.enabled === false ? ' off' : '');
+    const cells = []; // { key, el, input }
+    const itemOf = (key) => cfg.items.find((it) => it.key === key);
+    const toggle = (key) => {
+      const i = cfg.items.findIndex((it) => it.key === key);
+      if (i >= 0) cfg.items.splice(i, 1); else cfg.items.push({ key, count: 1 });
+      changed();
+    };
+    const makeCell = (key, content, title) => {
+      const cell = document.createElement('div');
+      cell.className = 'ad-cell';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      if (typeof content === 'string') b.textContent = content; else { b.classList.add('tile-chip'); b.appendChild(content); }
+      b.title = title;
+      b.addEventListener('click', () => toggle(key));
+      const input = countInput(1, (v) => { const it = itemOf(key); if (it) { it.count = v; changed(); } });
+      input.title = '目標枚数';
+      cell.append(b, input);
+      cells.push({ key, cell, chip: b, input });
+      return cell;
+    };
 
-      const top = document.createElement('div');
-      top.className = 'ad-top';
-      const en = document.createElement('label');
-      en.className = 'check';
-      const enChk = document.createElement('input');
-      enChk.type = 'checkbox';
-      enChk.checked = rule.enabled !== false;
-      enChk.addEventListener('change', () => { rule.enabled = enChk.checked; changed(true); });
-      en.append(enChk, ` ルール${idx + 1}`);
-      const count = document.createElement('input');
-      count.type = 'number'; count.min = 1; count.max = 14; count.value = rule.count;
-      count.addEventListener('change', () => {
-        rule.count = Math.min(14, Math.max(1, Math.round(+count.value) || 1));
-        count.value = rule.count;
-        changed();
-      });
-      const mode = document.createElement('select');
-      mode.innerHTML = '<option value="draw">枚ツモるまで（累計）</option><option value="hold">枚を手牌に持つまで</option>';
-      mode.value = rule.countMode;
-      mode.addEventListener('change', () => { rule.countMode = mode.value; changed(); });
-      const del = document.createElement('button');
-      del.type = 'button'; del.className = 'btn ghost small'; del.textContent = '削除';
-      del.addEventListener('click', () => { cfg.rules.splice(idx, 1); changed(true); });
-      const goal = document.createElement('span');
-      goal.className = 'ad-goal';
-      goal.append(count, mode);
-      top.append(en, goal, del);
-      card.appendChild(top);
+    for (const g of AutoDiscard.GROUPS) {
+      const row = document.createElement('div');
+      row.className = 'ad-group';
+      const l = document.createElement('span');
+      l.className = 'ad-label';
+      l.textContent = g.label;
+      const grid = document.createElement('div');
+      grid.className = 'ad-grid';
+      for (const [key, text, title] of g.items) grid.appendChild(makeCell(key, text, title));
+      row.append(l, grid);
+      root.appendChild(row);
+    }
+    // 特定の牌: 萬子・筒子・索子・字牌を1行ずつ（山に無い牌種は空欄）
+    const inWall = Tiles.kindsFromSettings(settings);
+    const row = document.createElement('div');
+    row.className = 'ad-group';
+    const l = document.createElement('span');
+    l.className = 'ad-label';
+    l.textContent = '特定の牌';
+    const grid = document.createElement('div');
+    grid.className = 'ad-grid tiles';
+    for (let k = 0; k < 34; k++) {
+      if (!inWall.has(k)) { grid.appendChild(document.createElement('div')); continue; }
+      grid.appendChild(makeCell(`kind:${k}`, kindEl(k, 'sm', true), Tiles.info(k).label));
+    }
+    row.append(l, grid);
+    root.appendChild(row);
 
-      const summary = document.createElement('div');
-      summary.className = 'ad-summary';
-      const updSummary = () => {
-        summary.textContent = AutoDiscard.isActive(Object.assign({}, rule, { enabled: true }))
-          ? `欲しい牌: ${AutoDiscard.describe(rule)}` : '条件を1つ以上選んでください';
-      };
+    const foot = document.createElement('div');
+    foot.className = 'ad-foot';
+    const summary = document.createElement('span');
+    summary.className = 'ad-summary';
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'btn ghost small';
+    clear.textContent = '条件をすべて解除';
+    clear.addEventListener('click', () => { cfg.items = []; changed(); });
+    foot.append(summary, clear);
+    root.appendChild(foot);
 
-      const chipRow = (label, items, isOn, toggle) => {
-        const row = document.createElement('div');
-        row.className = 'ad-chips';
-        const l = document.createElement('span');
-        l.className = 'ad-label';
-        l.textContent = label;
-        row.appendChild(l);
-        const box = document.createElement('div');
-        box.className = 'ad-chip-box';
-        for (const [val, text, node] of items) {
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'chip' + (node ? ' tile-chip' : '');
-          if (node) b.appendChild(node); else b.textContent = text;
-          if (node) b.title = text;
-          b.setAttribute('aria-pressed', String(isOn(val)));
-          b.addEventListener('click', () => {
-            toggle(val);
-            b.setAttribute('aria-pressed', String(isOn(val)));
-            updSummary();
-            changed();
-          });
-          box.appendChild(b);
-        }
-        row.appendChild(box);
-        return row;
-      };
-      const arrToggle = (key) => (val) => {
-        const a = rule[key];
-        const i = a.indexOf(val);
-        if (i >= 0) a.splice(i, 1); else a.push(val);
-      };
-      for (const [key, label, items] of CHIPS) {
-        card.appendChild(chipRow(label, items, (v) => rule[key].includes(v), arrToggle(key)));
+    function refreshEditor() {
+      const sum = cfg.combine === 'sum';
+      totalField.classList.toggle('hidden', !sum);
+      total.value = cfg.total;
+      for (const c of cells) {
+        const it = itemOf(c.key);
+        c.chip.setAttribute('aria-pressed', String(!!it));
+        c.cell.classList.toggle('on', !!it);
+        c.input.classList.toggle('hidden', !it || sum);
+        if (it) c.input.value = it.count;
       }
-      card.appendChild(chipRow('役牌', [['y', '役牌（三元・場風・自風）']], () => !!rule.yakuhai, () => { rule.yakuhai = !rule.yakuhai; }));
-      const kindItems = [];
-      for (let k = 0; k < 34; k++) {
-        if (!(Tiles.kindsFromSettings(settings).has(k))) continue;
-        kindItems.push([k, Tiles.info(k).label, kindEl(k, 'xs', true)]);
-      }
-      card.appendChild(chipRow('特定の牌', kindItems, (v) => rule.kinds.includes(v), arrToggle('kinds')));
-      updSummary();
-      card.appendChild(summary);
-      root.appendChild(card);
+      clear.disabled = cfg.items.length === 0;
+      summary.textContent = cfg.items.length === 0
+        ? '条件なし: 常にツモ切りします'
+        : `欲しい牌: ${cfg.items.map((it) => AutoDiscard.shortLabel(it.key) + (sum ? '' : `×${it.count}`)).join('・')}${sum ? `（合計${cfg.total}枚）` : ''}`;
+    }
+    refreshEditor();
+  }
+
+  /** 目標枚数の入力欄（1〜14） */
+  function countInput(value, onChange) {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = 1; input.max = 14; input.value = value;
+    input.className = 'ad-count';
+    input.addEventListener('change', () => {
+      const v = AutoDiscard.clampCount(input.value);
+      input.value = v;
+      onChange(v);
     });
-
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'btn small';
-    add.textContent = '＋ ルールを追加';
-    add.disabled = cfg.rules.length >= MAX_AD_RULES;
-    add.addEventListener('click', () => { cfg.rules.push(AutoDiscard.newRule()); changed(true); });
-    root.appendChild(add);
+    return input;
   }
 
   async function doDiscard(tileId, declareRiichi = false) {

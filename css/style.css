@@ -171,13 +171,12 @@ main {
 .auto-toggles .tg { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; color: rgba(255,255,255,0.85); }
 .auto-toggles .tg input { width: 14px; height: 14px; accent-color: var(--win); margin: 0; }
 .auto-toggles .tg:has(input:checked) { color: var(--win); }
-/* 条件付き自動ツモ切りの進捗 */
-.ad-progress { padding-left: 20px; font-size: 11px; line-height: 1.45; color: rgba(255,255,255,0.75); max-width: 190px; }
-.ad-progress .adp-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.ad-progress .adp-row.done { color: var(--win); }
-.ad-progress .adp-row.done::before { content: "✓ "; }
-.ad-progress .adp-mode { color: var(--muted); font-size: 10px; }
-.ad-progress .adp-stop { color: var(--accent); font-size: 10px; }
+/* 条件付き自動ツモ切りの進捗（下のボタンの横） */
+.ad-progress { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: rgba(255,255,255,0.8); font-variant-numeric: tabular-nums; max-width: 340px; }
+.ad-progress .adp-item { white-space: nowrap; }
+.ad-progress .adp-item.done { color: var(--win); }
+.ad-progress .adp-item.done::before { content: "✓ "; }
+.ad-progress .adp-stop { color: var(--accent); white-space: nowrap; }
 /* 卓右上の待ち表示（聴牌中は常に表示） */
 .waits-box {
   grid-column: 3;
@@ -350,6 +349,8 @@ body.show-keys .hand-row { padding-bottom: 30px; }
 .hint-text { color: var(--muted); font-size: 12px; }
 .btn.auto { background: rgba(126, 224, 129, 0.16); border-color: rgba(126, 224, 129, 0.5); }
 .btn.auto.running { background: #b3402c; border-color: #e0654c; color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+.btn.autodiscard { background: rgba(79, 195, 247, 0.14); border-color: rgba(79, 195, 247, 0.5); }
+.btn.autodiscard.running { background: #2f7fb0; border-color: #4fc3f7; color: #fff; }
 .auto-status { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
 
 /* ---------- ボタン ---------- */
@@ -603,12 +604,21 @@ button.tile.locked:disabled { cursor: not-allowed; }
 .result-waits { display: flex; justify-content: center; gap: 8px; align-items: center; margin-top: 8px; }
 
 /* 設定 */
-.settings-card { min-width: min(520px, 92vw); display: flex; flex-direction: column; gap: 10px; }
-.settings-body { max-height: 70vh; min-height: min(360px, 60vh); overflow: auto; padding-right: 4px; }
+.modal#settings-dialog { max-width: none; max-height: none; }
+/* タブを切り替えても大きさが変わらないよう固定し、画面に収まらなければ中身だけスクロール */
+.settings-card {
+  width: min(720px, calc(100vw - 32px));
+  height: min(680px, calc(100vh - 32px)); height: min(680px, calc(100dvh - 32px));
+  display: flex; flex-direction: column; gap: 10px; overflow: hidden;
+}
+.settings-card > h2, .settings-card .modal-actions { flex: none; }
+.settings-card .modal-actions { margin-top: 0; }
+.settings-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding-right: 4px; }
 .settings-page { display: none; flex-direction: column; gap: 8px; }
 .settings-page.active { display: flex; }
 .settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid rgba(255,255,255,0.14); margin-top: -4px; }
 .settings-tabs button {
+  flex: 1 1 0; text-align: center;
   background: transparent; color: var(--muted); border: none; border-bottom: 2px solid transparent;
   padding: 7px 14px; font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: -1px;
 }
@@ -639,31 +649,34 @@ button.tile.locked:disabled { cursor: not-allowed; }
 .btn.small { padding: 4px 12px; font-size: 12px; align-self: flex-start; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 /* 自動ツモ切りのルール編集 */
-#ad-editor { display: flex; flex-direction: column; gap: 8px; }
-.ad-rule {
-  border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; padding: 8px 10px;
-  background: rgba(255,255,255,0.03); display: flex; flex-direction: column; gap: 5px;
+#ad-editor { display: flex; flex-direction: column; gap: 10px; }
+.ad-head { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+.ad-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; }
+.ad-field select { width: 100%; }
+.ad-group { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: start; }
+.ad-label { font-size: 12px; color: var(--muted); padding-top: 5px; }
+/* 項目は縦横に揃うグリッド（どの行も同じ列幅） */
+.ad-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
+.ad-grid.tiles { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }
+.ad-cell { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ad-grid.tiles .ad-cell { flex-direction: column; }
+.ad-cell .chip { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad-grid.tiles .ad-cell .chip { flex: none; }
+.ad-count {
+  width: 44px; flex: none; background: #0f1520; color: var(--text); border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 6px; padding: 3px 4px; font-size: 13px; text-align: center;
 }
-.ad-rule.off { opacity: 0.55; }
-.ad-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ad-top .check { font-weight: 700; }
-.ad-goal { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 13px; }
-.ad-goal input[type="number"] {
-  width: 52px; background: #0f1520; color: var(--text); border: 1px solid rgba(255,255,255,0.2);
-  border-radius: 8px; padding: 5px 6px; font-size: 14px;
-}
-.ad-chips { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px; align-items: start; }
-.ad-label { font-size: 12px; color: var(--muted); padding-top: 4px; }
-.ad-chip-box { display: flex; flex-wrap: wrap; gap: 4px; }
+.ad-grid.tiles .ad-count { width: 100%; max-width: 44px; padding: 1px 2px; font-size: 12px; }
+.ad-count.hidden { display: none; }
 .chip {
   border: 1px solid rgba(255,255,255,0.18); background: transparent; color: var(--text);
-  border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; line-height: 1.4;
+  border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; line-height: 1.4;
 }
 .chip[aria-pressed="true"] { background: var(--accent); color: #2b1a00; border-color: var(--accent); font-weight: 700; }
 .chip.tile-chip { padding: 2px; border-radius: 5px; line-height: 0; }
-.chip.tile-chip[aria-pressed="true"] { background: var(--accent); }
 .chip.tile-chip .tile { pointer-events: none; }
-.ad-summary { font-size: 11px; color: var(--muted); }
+.ad-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ad-summary { font-size: 12px; color: var(--muted); }
 
 /* ---------- アニメーション ---------- */
 @keyframes dealIn {
@@ -725,6 +738,7 @@ button.tile.locked:disabled { cursor: not-allowed; }
   body.show-keys .tile .key { display: none; }
   body.show-keys .hand-row { padding-bottom: 6px; }
   .tileset-grid { grid-template-columns: 1fr; }
+  .ad-head { grid-template-columns: 1fr; }
   .hand { gap: 2px; }
   .hand-area { padding-left: 8px; padding-right: 8px; }
   .hint-text { display: none; }
@@ -842,12 +856,15 @@ button, label, .tile { touch-action: manipulation; -webkit-tap-highlight-color: 
   .modal { max-width: min(680px, 96vw); }
   .modal-card { padding: 12px 18px; max-height: 94vh; max-height: 94dvh; overflow: auto; }
   .modal-actions { margin-top: 10px; }
-  .settings-card { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px 12px; }
+  .settings-card {
+    display: grid; grid-template-columns: 84px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px 12px;
+    width: min(760px, calc(100vw - 24px)); height: calc(100vh - 16px); height: calc(100dvh - 16px); max-height: none;
+  }
   .settings-card > h2 { grid-column: 1 / -1; margin: 0; font-size: 15px; }
   .settings-tabs { grid-column: 1; grid-row: 2; flex-direction: column; border-bottom: none; border-right: 1px solid rgba(255,255,255,0.14); margin: 0; align-self: start; }
-  .settings-tabs button { border-bottom: none; border-right: 2px solid transparent; margin: 0 -1px 0 0; text-align: left; padding: 6px 12px; font-size: 13px; }
+  .settings-tabs button { flex: none; border-bottom: none; border-right: 2px solid transparent; margin: 0 -1px 0 0; text-align: left; padding: 6px 12px; font-size: 13px; }
   .settings-tabs button[aria-selected="true"] { border-right-color: var(--accent); }
-  .settings-body { grid-column: 2; grid-row: 2; max-height: calc(94dvh - 100px); min-height: 0; }
+  .settings-body { grid-column: 2; grid-row: 2; min-height: 0; }
   .settings-card .modal-actions { grid-column: 1 / -1; }
   .result-title { font-size: 22px; }
   .result-sub { margin-bottom: 6px; }
