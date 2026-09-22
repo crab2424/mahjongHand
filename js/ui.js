@@ -978,7 +978,6 @@ const UI = (() => {
     els.modeMsg.textContent = mode === 'riichi'
       ? `リーチ宣言牌（光っている牌）を選んでください${settings.clickMode === 'double' ? '（2回で確定）' : ''}`
       : mode === 'kan' ? 'カンする牌を選んでください' : '';
-    if (win) els.btnTsumo.querySelector('.lbl').textContent = `ツモ和了 ${win.limit ? `（${win.limit}）` : `（${win.fu}符 ${win.han}飜）`}`;
   }
   const show = (el, on) => el.classList.toggle('hidden', !on);
   const isShown = (el) => !el.classList.contains('hidden');

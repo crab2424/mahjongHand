@@ -236,6 +236,24 @@ const S = (o = {}) => Object.assign({ redDora: true, simulateOthers: false, maxD
   eq(w.waits.every((x) => g.initialCounts[x.kind] > 0), true, '待ちは山にある牌種のみ');
 }
 {
+  // どの牌種の組み合わせでも、山にある牌種はすべてドラになりうる
+  let bad = 0, combos = 0;
+  for (let mask = 1; mask < 1 << Tiles.TILE_GROUPS.length; mask++) {
+    const s = {};
+    Tiles.TILE_GROUPS.forEach((grp, i) => { s[grp.key] = !!(mask >> i & 1); });
+    const kinds = Tiles.kindsFromSettings(s);
+    const avail = Tiles.counts(Tiles.makeWall(false, kinds));
+    const doras = new Set([...kinds].map((k) => Tiles.nextDora(k, avail)));
+    for (const k of kinds) if (!doras.has(k) || !kinds.has(Tiles.nextDora(k, avail))) bad++;
+    combos++;
+  }
+  eq([combos, bad], [127, 0], '全127通りの牌種構成で全牌種がドラになりうる');
+  const only = (keys) => Tiles.counts(Tiles.makeWall(false, Tiles.kindsFromSettings(
+    Object.fromEntries(Tiles.TILE_GROUPS.map((grp) => [grp.key, keys.includes(grp.key)])))));
+  eq(Tiles.nextDora(16, only(['tileP28'])), 10, '筒子28のみ: 8p 表示のドラは 2p');
+  eq(Tiles.nextDora(0, only(['tileM19'])), 8, '萬子19のみ: 1m 表示のドラは 9m');
+}
+{
   eq(Tiles.makeWall(false).length, 136, '全種で 136 枚');
   eq(Tiles.makeWall(false, Tiles.kindsFromSettings({ tileZ: false })).length, 108, '字牌抜きで 108 枚');
   eq(Tiles.makeWall(true, Tiles.kindsFromSettings({ tileM28: false })).filter((t) => t.red).length, 2, '三麻では赤は 2 枚');
