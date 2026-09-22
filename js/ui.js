@@ -7,7 +7,7 @@ const UI = (() => {
   const STORAGE_KEY = 'soloMahjong.settings.v1';
   const TAB_KEY = 'soloMahjong.settingsTab';
   const DEFAULTS = {
-    display: 'glyph',
+    display: 'image',
     redDora: true,
     autoDraw: true,
     autoTsumogiri: true,
@@ -104,6 +104,7 @@ const UI = (() => {
     }
     s.autoReset = false; // 自動リセットは起動時には常に停止状態
     if (s.twoClick) { s.clickMode = 'double'; delete s.twoClick; } // 旧設定の移行
+    if (!s.imageDisplayMigrated) { s.display = 'image'; s.imageDisplayMigrated = true; } // 画像表示を既定に（1回だけ）
     if (countTiles(s) < MIN_WALL_TILES) for (const k of TILE_KEYS) s[k] = true;
     const adIn = s.autoDiscard && Array.isArray(s.autoDiscard.rules) ? s.autoDiscard : DEFAULTS.autoDiscard;
     s.autoDiscard = {
@@ -922,7 +923,10 @@ const UI = (() => {
     el.dataset.kind = tile.kind;
     el.title = info.label + (tile.red ? '（赤）' : '');
     el.setAttribute('aria-label', el.title);
-    if (settings.display === 'glyph') {
+    if (settings.display === 'image') {
+      const code = tile.red ? `0${info.suit}` : info.code;
+      el.innerHTML = `<img class="face img" src="assets/tiles/${code}.svg" alt="" draggable="false">`;
+    } else if (settings.display === 'glyph') {
       el.innerHTML = `<span class="face glyph">${info.glyph}</span>`;
     } else if (info.suit === 'z') {
       el.innerHTML = `<span class="face honor">${info.kanji}</span>`;

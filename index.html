@@ -4,14 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>一人麻雀 — ツモ切りシミュレーター</title>
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body data-display="glyph">
+<body data-display="image">
   <div class="app">
     <!-- ===== ヘッダー: 局情報 ===== -->
     <header class="topbar">
       <div class="brand">
-        <span class="logo">🀄</span>
+        <img class="logo" src="assets/icon.svg" alt="">
         <h1>一人麻雀</h1>
       </div>
       <div class="info-block">
@@ -132,6 +133,7 @@
           <label class="row">
             <span>牌の表示</span>
             <select id="set-display">
+              <option value="image">画像</option>
               <option value="glyph">麻雀牌の文字（🀇 🀙 🀐）</option>
               <option value="text">数字＋文字（5萬 / 東）</option>
             </select>

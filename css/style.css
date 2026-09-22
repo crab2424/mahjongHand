@@ -75,7 +75,7 @@ kbd {
   border-bottom: 1px solid var(--panel-border);
 }
 .brand { display: flex; align-items: center; gap: 8px; }
-.brand .logo { font-size: 22px; }
+.brand .logo { width: 28px; height: 28px; display: block; }
 .brand h1 { font-size: 17px; margin: 0; letter-spacing: 0.08em; font-weight: 700; }
 .info-block { display: flex; flex-direction: column; gap: 1px; }
 .info-block .label { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; }
@@ -486,6 +486,12 @@ body.show-keys .btn-key { display: inline-block; }
   background: var(--red-dora);
   box-shadow: 0 0 4px rgba(229, 38, 47, 0.8);
 }
+/* 画像表示: 牌の地は CSS、図柄は SVG */
+.tile .img {
+  width: 84%; height: 86%; object-fit: contain;
+  pointer-events: none; -webkit-user-drag: none; user-select: none;
+}
+body[data-display="image"] .tile.red::before { display: none; }
 /* 白のグリフは枠だけなので少し薄く */
 body[data-display="glyph"] .tile.suit-z[data-kind="31"] .glyph { opacity: 0.55; }
 
@@ -777,7 +783,7 @@ button, label, .tile { touch-action: manipulation; -webkit-tap-highlight-color: 
 
   .topbar { gap: 16px; padding: 3px 10px; flex-wrap: nowrap; }
   .brand h1 { display: none; }
-  .brand .logo { font-size: 18px; }
+  .brand .logo { width: 22px; height: 22px; }
   .info-block .label { font-size: 9px; }
   .info-block .value { font-size: 12px; white-space: nowrap; }
   .info-block .value b { font-size: 16px; }
