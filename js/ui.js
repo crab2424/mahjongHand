@@ -5,6 +5,7 @@
 const UI = (() => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const STORAGE_KEY = 'soloMahjong.settings.v1';
+  const TAB_KEY = 'soloMahjong.settingsTab';
   const DEFAULTS = {
     display: 'glyph',
     redDora: true,
@@ -16,6 +17,7 @@ const UI = (() => {
     autoWin: false,          // 自動和了
     autoKan: false,          // 自動カン
     autoTsumogiriAll: false, // 常に自動ツモ切り
+    autoDiscard: { combine: 'or', rules: [] }, // 条件付き自動ツモ切り（欲しい牌の条件）
     hints: true,
     simulateOthers: false,
     maxDraws: 0,
@@ -63,6 +65,9 @@ const UI = (() => {
   let hoverKind = null;      // ホバー中の手牌の牌種（視覚補助）
   let hoverPreview = null;   // ホバー中の牌を切った場合の待ち（聴牌になる場合のみ）
   const auto = { running: false, timer: null, count: 0, lastRender: 0 };
+  // 条件付き自動ツモ切りの状態（ツモ累計・目標達成で停止中か）
+  const ad = { counts: [], countedId: null, stopped: false };
+  const MAX_AD_RULES = 6;
   const els = {};
 
   // =====================================================
@@ -75,12 +80,14 @@ const UI = (() => {
       'river', 'riichi-stick', 'toast-layer', 'hint', 'log', 'hand', 'kans',
       'btn-draw', 'btn-tsumo', 'btn-riichi', 'btn-kan', 'btn-tsumogiri', 'btn-cancel', 'mode-msg',
       'btn-reset', 'btn-auto', 'auto-status', 'btn-settings', 'chk-hints', 'result-dialog', 'settings-dialog',
-      'result-body', 'btn-result-next', 'btn-result-close', 'btn-show-result', 'table', 'tileset-note',
+      'result-body', 'btn-result-next', 'btn-result-close', 'btn-show-result', 'table', 'tileset-note', 'settings-tabs',
+      'ad-editor', 'ad-progress',
     ];
     for (const id of ids) els[camel(id)] = document.getElementById(id);
     document.body.dataset.display = settings.display;
     document.body.classList.toggle('show-keys', !!settings.showKeys);
     bindEvents();
+    buildAdEditor();
     syncSettingsForm();
     syncAutoUI();
     newGame();
@@ -98,6 +105,11 @@ const UI = (() => {
     s.autoReset = false; // 自動リセットは起動時には常に停止状態
     if (s.twoClick) { s.clickMode = 'double'; delete s.twoClick; } // 旧設定の移行
     if (countTiles(s) < MIN_WALL_TILES) for (const k of TILE_KEYS) s[k] = true;
+    const adIn = s.autoDiscard && Array.isArray(s.autoDiscard.rules) ? s.autoDiscard : DEFAULTS.autoDiscard;
+    s.autoDiscard = {
+      combine: adIn.combine === 'and' ? 'and' : 'or',
+      rules: adIn.rules.slice(0, MAX_AD_RULES).map((r) => Object.assign(AutoDiscard.newRule(), r)),
+    };
     return s;
   }
   function saveSettings() {
@@ -114,6 +126,13 @@ const UI = (() => {
     els.btnReset.addEventListener('click', () => { stopAuto(); resetGame(); });
     els.btnAuto.addEventListener('click', () => toggleAuto());
     els.btnSettings.addEventListener('click', () => els.settingsDialog.showModal());
+    els.settingsTabs.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-tab]');
+      if (b) selectSettingsTab(b.dataset.tab);
+    });
+    let tab = 'view';
+    try { tab = localStorage.getItem(TAB_KEY) || tab; } catch (e) { /* ignore */ }
+    selectSettingsTab(tab);
     els.btnDraw.addEventListener('click', () => doDraw());
     els.btnTsumo.addEventListener('click', () => doTsumo());
     els.btnRiichi.addEventListener('click', () => enterMode('riichi'));
@@ -137,6 +156,7 @@ const UI = (() => {
       el.addEventListener('change', async () => {
         settings[key] = el.checked;
         saveSettings();
+        if (key === 'autoTsumogiriAll') { resetAd(); renderAdProgress(); }
         if (!el.checked) return;
         // ON にした瞬間にも適用（アニメーション中なら終わるまで待つ）
         const g = gen;
@@ -224,6 +244,15 @@ const UI = (() => {
     });
   }
 
+  /** 設定ダイアログのタブ切り替え（最後に開いたタブを記憶） */
+  function selectSettingsTab(tab) {
+    const tabs = els.settingsTabs.querySelectorAll('button[data-tab]');
+    if (![...tabs].some((b) => b.dataset.tab === tab)) tab = tabs[0].dataset.tab;
+    tabs.forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    document.querySelectorAll('.settings-page').forEach((p) => p.classList.toggle('active', p.dataset.page === tab));
+    try { localStorage.setItem(TAB_KEY, tab); } catch (e) { /* ignore */ }
+  }
+
   function syncSettingsForm() {
     for (const key of SETTING_KEYS) {
       const el = document.getElementById(`set-${key}`);
@@ -243,6 +272,7 @@ const UI = (() => {
     if (key === 'display') {
       document.body.dataset.display = settings.display;
       renderAll(false);
+      buildAdEditor();
     } else if (key === 'roundWind' || key === 'seatWind') {
       renderHeader();
       renderActions();
@@ -260,6 +290,7 @@ const UI = (() => {
       syncAutoUI();
     } else if (TILE_KEYS.includes(key)) {
       updateTilesetNote();
+      buildAdEditor();
     }
   }
 
@@ -272,6 +303,7 @@ const UI = (() => {
     gen++;
     const g = gen;
     game = new Game(settings);
+    resetAd();
     await presentGame(animate);
     if (g !== gen) return;
     afterDraw(g, game.drawn);
@@ -385,6 +417,7 @@ const UI = (() => {
 
   async function onAutoMatched(count, fast) {
     gen++;
+    resetAd();
     const g = gen;
     const animate = !settings.instantReset && !fast;
     await presentGame(animate);
@@ -455,12 +488,212 @@ const UI = (() => {
         return;
       }
     }
-    const tsumogiri = settings.autoTsumogiriAll || (game.riichi && settings.autoTsumogiri);
-    if (tsumogiri && !game.canTsumo() && game.kanOptions().length === 0) {
-      await sleep(wait);
-      if (g !== gen || busy || game.phase !== 'discard' || !game.drawn) return;
-      doDiscard(game.drawn.id);
+    if (game.canTsumo() || game.kanOptions().length > 0) return;
+    let target = null;
+    if (game.riichi && settings.autoTsumogiri) target = game.drawn.id;
+    else if (settings.autoTsumogiriAll) target = autoDiscardTarget();
+    if (target === null) return;
+    await sleep(wait);
+    if (g !== gen || busy || game.phase !== 'discard' || !game.drawn) return;
+    doDiscard(target);
+  }
+
+  // ---------- 条件付き自動ツモ切り ----------
+  function resetAd() {
+    ad.counts = [];
+    ad.countedId = null;
+    ad.stopped = false;
+  }
+  const adCtx = () => ({ doraKinds: game.doraKinds, roundWind: settings.roundWind, seatWind: settings.seatWind });
+  const adHeld = () => game.fullTiles().concat(...game.kans.map((k) => k.tiles));
+  function adProgress() {
+    return AutoDiscard.progress(settings.autoDiscard.rules, ad.counts, adHeld(), adCtx());
+  }
+
+  /**
+   * 自動ツモ切り（卓のトグル）で切る牌の id。止まる場合は null。
+   * 条件が無ければ常にツモ切り。条件があれば、欲しくない牌はツモ切り、欲しい牌なら
+   * 手牌の欲しくない牌（牌効率で最も不要）を手出しし、目標に達したら止まる。
+   */
+  function autoDiscardTarget() {
+    const rules = AutoDiscard.activeRules(settings.autoDiscard.rules);
+    if (rules.length === 0) return game.drawn.id;
+    if (ad.stopped) return null;
+    const ctx = adCtx();
+    const tile = game.drawn;
+    if (tile.id !== ad.countedId) {
+      ad.countedId = tile.id;
+      rules.forEach((r, i) => { if (AutoDiscard.matches(tile, r, ctx)) ad.counts[i] = (ad.counts[i] || 0) + 1; });
     }
+    const prog = adProgress();
+    renderAdProgress(prog);
+    if (AutoDiscard.goalReached(prog, settings.autoDiscard.combine)) {
+      ad.stopped = true;
+      renderAdProgress(prog);
+      showToast('目標達成', true);
+      log(`${game.turn}巡目`, '自動ツモ切り 目標達成');
+      return null;
+    }
+    if (game.riichi || !AutoDiscard.isWanted(tile, rules, ctx)) return tile.id;
+    const pick = AutoDiscard.pickDiscard(game.fullTiles(), rules, ctx, analysis || game.analysis());
+    if (!pick) {
+      ad.stopped = true;
+      renderAdProgress(prog);
+      showToast('切れる牌がありません', true);
+      return null;
+    }
+    return pick.id;
+  }
+
+  /** 卓左上のトグル下に進捗を表示 */
+  function renderAdProgress(prog) {
+    const el = els.adProgress;
+    const rules = AutoDiscard.activeRules(settings.autoDiscard.rules);
+    if (!settings.autoTsumogiriAll || rules.length === 0 || !game) { el.innerHTML = ''; show(el, false); return; }
+    prog = prog || adProgress();
+    el.innerHTML = '';
+    prog.forEach((p) => {
+      const row = document.createElement('div');
+      row.className = 'adp-row' + (p.done ? ' done' : '');
+      row.textContent = `${AutoDiscard.describe(p.rule)} ${Math.min(p.have, p.need)}/${p.need}${p.rule.countMode === 'hold' ? '' : '枚'}`;
+      el.appendChild(row);
+    });
+    if (prog.length > 1) {
+      const c = document.createElement('div');
+      c.className = 'adp-mode';
+      c.textContent = settings.autoDiscard.combine === 'and' ? 'すべて達成で停止' : 'どれか達成で停止';
+      el.appendChild(c);
+    }
+    if (ad.stopped) {
+      const st = document.createElement('div');
+      st.className = 'adp-stop';
+      st.textContent = '停止中（トグルを入れ直すと再開）';
+      el.appendChild(st);
+    }
+    show(el, true);
+  }
+
+  /** 設定「自動」タブのルール編集 UI */
+  function buildAdEditor() {
+    const root = els.adEditor;
+    const cfg = settings.autoDiscard;
+    const changed = (rebuild = false) => {
+      saveSettings();
+      resetAd();
+      renderAdProgress();
+      if (rebuild) buildAdEditor();
+    };
+    root.innerHTML = '';
+
+    const head = document.createElement('label');
+    head.className = 'row';
+    head.innerHTML = '<span>複数ルールの停止条件</span>';
+    const comb = document.createElement('select');
+    comb.innerHTML = '<option value="or">どれか1つ達成で停止（OR）</option><option value="and">すべて達成で停止（AND）</option>';
+    comb.value = cfg.combine;
+    comb.addEventListener('change', () => { cfg.combine = comb.value; changed(); });
+    head.appendChild(comb);
+    root.appendChild(head);
+
+    const CHIPS = [
+      ['suits', '種類', [['m', '萬子'], ['p', '筒子'], ['s', '索子'], ['wind', '風牌'], ['dragon', '三元牌']]],
+      ['nums', '数字', [['yaochu', '么九（1・9・字）'], ['simple', '中張（2〜8）'], ...'123456789'.split('').map((n) => [n, n])]],
+      ['dora', 'ドラ', [['dora', 'ドラ（カンドラ含む）'], ['red', '赤ドラ']]],
+    ];
+    cfg.rules.forEach((rule, idx) => {
+      const card = document.createElement('div');
+      card.className = 'ad-rule' + (rule.enabled === false ? ' off' : '');
+
+      const top = document.createElement('div');
+      top.className = 'ad-top';
+      const en = document.createElement('label');
+      en.className = 'check';
+      const enChk = document.createElement('input');
+      enChk.type = 'checkbox';
+      enChk.checked = rule.enabled !== false;
+      enChk.addEventListener('change', () => { rule.enabled = enChk.checked; changed(true); });
+      en.append(enChk, ` ルール${idx + 1}`);
+      const count = document.createElement('input');
+      count.type = 'number'; count.min = 1; count.max = 14; count.value = rule.count;
+      count.addEventListener('change', () => {
+        rule.count = Math.min(14, Math.max(1, Math.round(+count.value) || 1));
+        count.value = rule.count;
+        changed();
+      });
+      const mode = document.createElement('select');
+      mode.innerHTML = '<option value="draw">枚ツモるまで（累計）</option><option value="hold">枚を手牌に持つまで</option>';
+      mode.value = rule.countMode;
+      mode.addEventListener('change', () => { rule.countMode = mode.value; changed(); });
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'btn ghost small'; del.textContent = '削除';
+      del.addEventListener('click', () => { cfg.rules.splice(idx, 1); changed(true); });
+      const goal = document.createElement('span');
+      goal.className = 'ad-goal';
+      goal.append(count, mode);
+      top.append(en, goal, del);
+      card.appendChild(top);
+
+      const summary = document.createElement('div');
+      summary.className = 'ad-summary';
+      const updSummary = () => {
+        summary.textContent = AutoDiscard.isActive(Object.assign({}, rule, { enabled: true }))
+          ? `欲しい牌: ${AutoDiscard.describe(rule)}` : '条件を1つ以上選んでください';
+      };
+
+      const chipRow = (label, items, isOn, toggle) => {
+        const row = document.createElement('div');
+        row.className = 'ad-chips';
+        const l = document.createElement('span');
+        l.className = 'ad-label';
+        l.textContent = label;
+        row.appendChild(l);
+        const box = document.createElement('div');
+        box.className = 'ad-chip-box';
+        for (const [val, text, node] of items) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'chip' + (node ? ' tile-chip' : '');
+          if (node) b.appendChild(node); else b.textContent = text;
+          if (node) b.title = text;
+          b.setAttribute('aria-pressed', String(isOn(val)));
+          b.addEventListener('click', () => {
+            toggle(val);
+            b.setAttribute('aria-pressed', String(isOn(val)));
+            updSummary();
+            changed();
+          });
+          box.appendChild(b);
+        }
+        row.appendChild(box);
+        return row;
+      };
+      const arrToggle = (key) => (val) => {
+        const a = rule[key];
+        const i = a.indexOf(val);
+        if (i >= 0) a.splice(i, 1); else a.push(val);
+      };
+      for (const [key, label, items] of CHIPS) {
+        card.appendChild(chipRow(label, items, (v) => rule[key].includes(v), arrToggle(key)));
+      }
+      card.appendChild(chipRow('役牌', [['y', '役牌（三元・場風・自風）']], () => !!rule.yakuhai, () => { rule.yakuhai = !rule.yakuhai; }));
+      const kindItems = [];
+      for (let k = 0; k < 34; k++) {
+        if (!(Tiles.kindsFromSettings(settings).has(k))) continue;
+        kindItems.push([k, Tiles.info(k).label, kindEl(k, 'xs', true)]);
+      }
+      card.appendChild(chipRow('特定の牌', kindItems, (v) => rule.kinds.includes(v), arrToggle('kinds')));
+      updSummary();
+      card.appendChild(summary);
+      root.appendChild(card);
+    });
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn small';
+    add.textContent = '＋ ルールを追加';
+    add.disabled = cfg.rules.length >= MAX_AD_RULES;
+    add.addEventListener('click', () => { cfg.rules.push(AutoDiscard.newRule()); changed(true); });
+    root.appendChild(add);
   }
 
   async function doDiscard(tileId, declareRiichi = false) {
@@ -858,6 +1091,7 @@ const UI = (() => {
 
   function renderStatus() {
     renderWaitsBox();
+    renderAdProgress();
     if (game.phase === 'end' && game.result && game.result.type === 'win') {
       els.shanten.textContent = 'ツモ和了';
       els.shanten.className = 'shanten complete';

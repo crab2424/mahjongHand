@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-for (const f of ['tiles.js', 'shanten.js', 'yaku.js', 'game.js']) {
+for (const f of ['tiles.js', 'shanten.js', 'yaku.js', 'game.js', 'autodiscard.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), { filename: f });
 }
 
@@ -286,6 +286,41 @@ const S = (o = {}) => Object.assign({ redDora: true, simulateOthers: false, maxD
   t.hand = Tiles.sortTiles(P('123m456p789s11z22z'));
   t.drawn = { id: 998, kind: 28, red: false };
   eq(names(t.canTsumo()), ['天和'], '配牌14枚で和了形なら天和');
+}
+
+console.log('条件付き自動ツモ切り');
+{
+  const A = AutoDiscard;
+  const ctx = { doraKinds: [4], roundWind: 27, seatWind: 28 };
+  const T = (s) => P(s)[0];
+  const rule = (o) => Object.assign(A.newRule(), o);
+  const sSimple = rule({ suits: ['s'], nums: ['simple'] });
+  eq([A.matches(T('5s'), sSimple, ctx), A.matches(T('9s'), sSimple, ctx), A.matches(T('5m'), sSimple, ctx)], [true, false, false], '索子かつ中張');
+  const yao = rule({ nums: ['yaochu'] });
+  eq([A.matches(T('1m'), yao, ctx), A.matches(T('7z'), yao, ctx), A.matches(T('2p'), yao, ctx)], [true, true, false], '么九は字牌を含む');
+  const d = rule({ dora: ['dora', 'red'] });
+  eq([A.matches(T('5m'), d, ctx), A.matches(T('0p'), d, ctx), A.matches(T('5p'), d, ctx)], [true, true, false], '表ドラ・赤ドラ');
+  const y = rule({ yakuhai: true });
+  eq([1, 2, 3, 4, 5, 7].map((n) => A.matches(T(`${n}z`), y, ctx)), [true, true, false, false, true, true], '役牌（場風東・自風南・三元）');
+  eq(A.isActive(A.newRule()), false, '条件なしのルールは無効');
+  eq(A.isActive(rule({ kinds: [33], enabled: false })), false, '無効化したルール');
+
+  const rules = [rule({ kinds: [33], count: 2, countMode: 'hold' }), rule({ dora: ['dora'], count: 1, countMode: 'draw' })];
+  const held = P('77z123m');
+  let prog = A.progress(rules, [0, 0], held, ctx);
+  eq(prog.map((x) => [x.have, x.done]), [[2, true], [0, false]], '保持数とツモ累計の進捗');
+  eq([A.goalReached(prog, 'or'), A.goalReached(prog, 'and')], [true, false], 'OR / AND');
+  prog = A.progress(rules, [0, 1], held, ctx);
+  eq(A.goalReached(prog, 'and'), true, 'AND すべて達成');
+
+  // 手出し: 欲しくない牌のうち牌効率で最も不要な牌
+  const want = [rule({ suits: ['s'] })];
+  const tiles = P('123s456s789s1m5p9p11z');
+  const rows = Shanten.analyzeDiscards(Tiles.counts(tiles), 0);
+  const pick = A.pickDiscard(tiles, want, ctx, rows, () => 0);
+  eq(pick.kind !== 27 && [0, 13, 17].includes(pick.kind), true, '索子と対子を残して孤立牌を切る');
+  eq(A.pickDiscard(P('123s456s789s11s'), want, ctx, rows), null, '全部欲しい牌なら候補なし');
+  eq(A.pickDiscard(P('0p5p'), [rule({ kinds: [33] })], ctx, [], () => 0).red, false, '同種なら赤でない方を切る');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -171,6 +171,13 @@ main {
 .auto-toggles .tg { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; color: rgba(255,255,255,0.85); }
 .auto-toggles .tg input { width: 14px; height: 14px; accent-color: var(--win); margin: 0; }
 .auto-toggles .tg:has(input:checked) { color: var(--win); }
+/* 条件付き自動ツモ切りの進捗 */
+.ad-progress { padding-left: 20px; font-size: 11px; line-height: 1.45; color: rgba(255,255,255,0.75); max-width: 190px; }
+.ad-progress .adp-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.ad-progress .adp-row.done { color: var(--win); }
+.ad-progress .adp-row.done::before { content: "✓ "; }
+.ad-progress .adp-mode { color: var(--muted); font-size: 10px; }
+.ad-progress .adp-stop { color: var(--accent); font-size: 10px; }
 /* 卓右上の待ち表示（聴牌中は常に表示） */
 .waits-box {
   grid-column: 3;
@@ -591,12 +598,22 @@ button.tile.locked:disabled { cursor: not-allowed; }
 
 /* 設定 */
 .settings-card { min-width: min(520px, 92vw); display: flex; flex-direction: column; gap: 10px; }
-.settings-body { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow: auto; padding-right: 4px; }
+.settings-body { max-height: 70vh; min-height: min(360px, 60vh); overflow: auto; padding-right: 4px; }
+.settings-page { display: none; flex-direction: column; gap: 8px; }
+.settings-page.active { display: flex; }
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid rgba(255,255,255,0.14); margin-top: -4px; }
+.settings-tabs button {
+  background: transparent; color: var(--muted); border: none; border-bottom: 2px solid transparent;
+  padding: 7px 14px; font-size: 14px; font-weight: 700; cursor: pointer; margin-bottom: -1px;
+}
+.settings-tabs button:hover { color: var(--text); }
+.settings-tabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
 .settings-body h3 {
   margin: 10px 0 2px; font-size: 12px; color: var(--muted); letter-spacing: 0.12em;
   border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 3px;
 }
-.settings-body h3:first-child { margin-top: 0; }
+.settings-page h3:first-child { margin-top: 0; }
+.settings-card .note.flush { padding-left: 0; line-height: 1.5; }
 .settings-body h3 small { font-weight: 400; letter-spacing: 0; margin-left: 6px; }
 .settings-card .row.sub { padding-left: 24px; font-size: 13px; }
 .settings-card .note { margin: 0; padding-left: 24px; font-size: 11px; color: var(--muted); }
@@ -613,6 +630,34 @@ button.tile.locked:disabled { cursor: not-allowed; }
   border-radius: 8px; padding: 6px 10px; font-size: 14px;
 }
 .settings-card input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+.btn.small { padding: 4px 12px; font-size: 12px; align-self: flex-start; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+/* 自動ツモ切りのルール編集 */
+#ad-editor { display: flex; flex-direction: column; gap: 8px; }
+.ad-rule {
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; padding: 8px 10px;
+  background: rgba(255,255,255,0.03); display: flex; flex-direction: column; gap: 5px;
+}
+.ad-rule.off { opacity: 0.55; }
+.ad-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ad-top .check { font-weight: 700; }
+.ad-goal { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 13px; }
+.ad-goal input[type="number"] {
+  width: 52px; background: #0f1520; color: var(--text); border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px; padding: 5px 6px; font-size: 14px;
+}
+.ad-chips { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px; align-items: start; }
+.ad-label { font-size: 12px; color: var(--muted); padding-top: 4px; }
+.ad-chip-box { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip {
+  border: 1px solid rgba(255,255,255,0.18); background: transparent; color: var(--text);
+  border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; line-height: 1.4;
+}
+.chip[aria-pressed="true"] { background: var(--accent); color: #2b1a00; border-color: var(--accent); font-weight: 700; }
+.chip.tile-chip { padding: 2px; border-radius: 5px; line-height: 0; }
+.chip.tile-chip[aria-pressed="true"] { background: var(--accent); }
+.chip.tile-chip .tile { pointer-events: none; }
+.ad-summary { font-size: 11px; color: var(--muted); }
 
 /* ---------- アニメーション ---------- */
 @keyframes dealIn {
@@ -791,7 +836,13 @@ button, label, .tile { touch-action: manipulation; -webkit-tap-highlight-color: 
   .modal { max-width: min(680px, 96vw); }
   .modal-card { padding: 12px 18px; max-height: 94vh; max-height: 94dvh; overflow: auto; }
   .modal-actions { margin-top: 10px; }
-  .settings-body { max-height: calc(94dvh - 110px); }
+  .settings-card { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px 12px; }
+  .settings-card > h2 { grid-column: 1 / -1; margin: 0; font-size: 15px; }
+  .settings-tabs { grid-column: 1; grid-row: 2; flex-direction: column; border-bottom: none; border-right: 1px solid rgba(255,255,255,0.14); margin: 0; align-self: start; }
+  .settings-tabs button { border-bottom: none; border-right: 2px solid transparent; margin: 0 -1px 0 0; text-align: left; padding: 6px 12px; font-size: 13px; }
+  .settings-tabs button[aria-selected="true"] { border-right-color: var(--accent); }
+  .settings-body { grid-column: 2; grid-row: 2; max-height: calc(94dvh - 100px); min-height: 0; }
+  .settings-card .modal-actions { grid-column: 1 / -1; }
   .result-title { font-size: 22px; }
   .result-sub { margin-bottom: 6px; }
   .result-hand { margin: 2px 0 6px; }
