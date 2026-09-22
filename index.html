@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>一人麻雀 — ツモ切りシミュレーター</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -45,7 +45,6 @@
           </div>
           <div class="status" id="status">
             <div class="shanten" id="shanten">—</div>
-            <div class="waits" id="waits"></div>
           </div>
           <div class="waits-box hidden" id="waits-box">
             <div class="waits-title" id="waits-title">待ち</div>
@@ -77,12 +76,12 @@
     <!-- ===== フッター: 手牌と操作 ===== -->
     <footer class="hand-area">
       <div class="actions" id="actions">
-        <button class="btn primary hidden" id="btn-draw" type="button">ツモる</button>
-        <button class="btn win hidden" id="btn-tsumo" type="button">ツモ和了</button>
-        <button class="btn accent hidden" id="btn-riichi" type="button">リーチ</button>
-        <button class="btn accent hidden" id="btn-kan" type="button">カン</button>
-        <button class="btn hidden" id="btn-tsumogiri" type="button">見逃してツモ切り</button>
-        <button class="btn ghost hidden" id="btn-cancel" type="button">キャンセル</button>
+        <button class="btn primary hidden" id="btn-draw" type="button">ツモる<kbd class="btn-key">Space</kbd></button>
+        <button class="btn win hidden" id="btn-tsumo" type="button"><span class="lbl">ツモ和了</span><kbd class="btn-key">H</kbd></button>
+        <button class="btn accent hidden" id="btn-riichi" type="button">リーチ<kbd class="btn-key">L</kbd></button>
+        <button class="btn accent hidden" id="btn-kan" type="button">カン<kbd class="btn-key">G</kbd></button>
+        <button class="btn hidden" id="btn-tsumogiri" type="button">見逃してツモ切り<kbd class="btn-key">P</kbd></button>
+        <button class="btn ghost hidden" id="btn-cancel" type="button">キャンセル<kbd class="btn-key">Esc</kbd></button>
         <button class="btn hidden" id="btn-show-result" type="button">結果をもう一度見る</button>
         <span class="mode-msg" id="mode-msg"></span>
       </div>
@@ -94,9 +93,15 @@
         <button class="btn reset" id="btn-reset" type="button">⟳ 配牌リセット</button>
         <button class="btn auto" id="btn-auto" type="button">▶ 自動リセット</button>
         <span class="auto-status hidden" id="auto-status"></span>
-        <span class="hint-text">牌をクリック／<kbd>1</kbd>〜<kbd>¥</kbd> で打牌 ・ <kbd>Enter</kbd> ツモ切り ／ <kbd>N</kbd> 配牌リセット ／ <kbd>A</kbd> 自動リセット ／ <kbd>Esc</kbd> 停止・キャンセル</span>
+        <span class="hint-text"><kbd>1</kbd>〜<kbd>¥</kbd> 打牌 ・ <kbd>Enter</kbd> ツモ切り ／ <kbd>L</kbd> リーチ ・ <kbd>G</kbd> カン ・ <kbd>H</kbd> ツモ和了 ・ <kbd>P</kbd> 見逃し ／ <kbd>N</kbd> 配牌リセット ・ <kbd>A</kbd> 自動リセット ・ <kbd>Esc</kbd> 停止・キャンセル</span>
       </div>
     </footer>
+  </div>
+
+  <!-- ===== スマホ縦向き時の案内 ===== -->
+  <div class="rotate-notice" aria-hidden="true">
+    <div class="rotate-icon">📱</div>
+    <p>端末を横向きにしてください</p>
   </div>
 
   <!-- ===== 結果ダイアログ ===== -->
@@ -147,7 +152,7 @@
           </select>
         </label>
         <label class="check"><input type="checkbox" id="set-fastTsumo"> ツモ動作の簡略化（打牌とツモを同時に行い、連続で打牌できる）</label>
-        <label class="check"><input type="checkbox" id="set-showKeys"> 手牌の下に打牌キーを表示（<kbd>1</kbd>〜<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd> <kbd>^</kbd> <kbd>¥</kbd>、<kbd>Enter</kbd> でツモ切り）</label>
+        <label class="check keys-only"><input type="checkbox" id="set-showKeys"> 手牌の下とボタンに操作キーを表示（打牌 <kbd>1</kbd>〜<kbd>¥</kbd>・ツモ切り <kbd>Enter</kbd>・リーチ <kbd>L</kbd>・カン <kbd>G</kbd>・ツモ和了 <kbd>H</kbd>・見逃し <kbd>P</kbd>）</label>
 
         <h3>配牌リセット</h3>
         <label class="check"><input type="checkbox" id="set-instantReset"> 簡略化（アニメーションを省略し、押した瞬間に切り替える）</label>

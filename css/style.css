@@ -62,6 +62,7 @@ kbd {
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100vh;
+  height: 100dvh;
 }
 
 /* ヘッダー */
@@ -149,7 +150,6 @@ main {
 .status {
   grid-column: 2;
   text-align: center;
-  min-height: 60px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -206,21 +206,6 @@ main {
 .shanten .sub { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.7); letter-spacing: 0.1em; margin-right: 8px; }
 .shanten.tenpai { color: var(--accent); }
 .shanten.complete { color: var(--win); animation: popIn 0.4s var(--ease-out) both; }
-.waits {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
-}
-.waits .wait {
-  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
-  animation: popIn 0.35s var(--ease-out) both;
-}
-.waits .wait small { font-size: 10px; color: rgba(255,255,255,0.75); }
-.waits .wait .tile { animation: glow 1.8s ease-in-out infinite; }
-.waits .total { margin-left: 6px; color: var(--accent); font-weight: 700; }
 
 /* 河 */
 .river-wrap {
@@ -232,32 +217,36 @@ main {
   flex: 1;
   min-height: 0;
   width: 100%;
-  padding-top: 14px;          /* リーチ棒の分 */
+  padding-top: 16px;          /* リーチ棒の分 */
   overflow-y: auto;           /* 河が長くなったらスクロール */
   overflow-x: hidden;
   scrollbar-width: thin;
 }
 .river {
+  --river-cols: 14;           /* 等倍時の1行の枚数（ui.js の fitRiver が参照） */
+  --river-scale: 1;           /* 河が長くなると ui.js が縮小する */
   display: flex;
   flex-wrap: wrap;
   gap: 3px;
-  width: calc(14 * (var(--tile-md-w) + 3px));
+  width: calc(var(--river-cols) * (var(--tile-md-w) + 3px));
   min-height: calc(3 * (var(--tile-md-h) + 3px));
   align-content: flex-start;
   transition: opacity 0.3s;
 }
+.river .tile {
+  --w: calc(var(--tile-md-w) * var(--river-scale));
+  width: var(--w);
+  height: calc(var(--w) * 1.35);
+}
 .river .river-tile.tsumogiri { filter: brightness(0.82); }
 .river .river-tile.riichi-tile {
   transform: rotate(-90deg);
-  margin: 0 7px;
+  margin: 0 calc(var(--w) * 0.18 + 1px);
 }
+/* リーチ棒は河の上の余白に置く（河の牌と重ならない） */
 .riichi-stick {
-  position: sticky;
-  top: 0;
-  margin-bottom: -8px;
-  flex: none;
-  order: -1;
-  align-self: flex-start;
+  position: absolute;
+  top: 4px;
   left: 50%;
   transform: translateX(-50%);
   width: 120px; height: 8px;
@@ -369,12 +358,27 @@ body.show-keys .hand-row { padding-bottom: 30px; }
   white-space: nowrap;
   transition: transform 0.15s, background 0.2s, box-shadow 0.2s;
 }
-.btn:hover { background: rgba(255, 255, 255, 0.18); transform: translateY(-1px); }
+@media (hover: hover) {
+  .btn:hover { background: rgba(255, 255, 255, 0.18); transform: translateY(-1px); }
+  .btn.primary:hover { background: #4a7de0; }
+  .btn.accent:hover { background: #bd5424; }
+}
 .btn:active { transform: translateY(0); }
 .btn.primary { background: #3b6fd6; border-color: #4f83ea; }
-.btn.primary:hover { background: #4a7de0; }
 .btn.accent { background: #a3471c; border-color: #cf6a3a; color: #fff; }
-.btn.accent:hover { background: #bd5424; }
+/* ボタン内の操作キー表示 */
+.btn-key {
+  display: none;
+  margin-left: 7px;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: 1px;
+  background: rgba(0, 0, 0, 0.22);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: inherit;
+  opacity: 0.85;
+}
+body.show-keys .btn-key { display: inline-block; }
 .btn.win {
   background: linear-gradient(135deg, #f4c542, #ff8a4c);
   color: #2b1a00;
@@ -480,7 +484,9 @@ body[data-display="glyph"] .tile.suit-z[data-kind="31"] .glyph { opacity: 0.55; 
 
 /* 手牌の操作状態 */
 button.tile { cursor: pointer; }
-button.tile:not(:disabled):hover { transform: translateY(-9px); }
+@media (hover: hover) {
+  button.tile:not(:disabled):hover { transform: translateY(-9px); }
+}
 button.tile:disabled { cursor: default; }
 button.tile.locked:disabled { cursor: not-allowed; }
 .tile.selected { transform: translateY(-14px) !important; box-shadow: 0 0 0 3px var(--accent), 0 8px 14px rgba(0,0,0,0.5); }
@@ -672,4 +678,129 @@ button.tile.locked:disabled { cursor: not-allowed; }
   .hand-area { padding-left: 8px; padding-right: 8px; }
   .hint-text { display: none; }
   .side { flex-direction: column; }
+}
+
+/* ---------- タッチ端末（スマホ・タブレット）: キー操作の説明を出さない ---------- */
+@media (hover: none) {
+  .hint-text, .keys-only { display: none !important; }
+  body.show-keys .tile .key, body.show-keys .btn-key { display: none; }
+  body.show-keys .hand-row { padding-bottom: 6px; }
+}
+button, label, .tile { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
+/* スマホ縦向きの案内（横向き専用） */
+.rotate-notice { display: none; }
+@media (orientation: portrait) and (max-width: 600px) and (hover: none) {
+  .rotate-notice {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: var(--bg); color: var(--text); font-size: 16px; text-align: center;
+  }
+  .rotate-notice p { margin: 0; }
+  .rotate-icon { font-size: 56px; animation: rotateHint 2.4s ease-in-out infinite; }
+  .app { visibility: hidden; }
+}
+@keyframes rotateHint {
+  0%, 25%   { transform: rotate(0deg); }
+  50%, 85%  { transform: rotate(-90deg); }
+  100%      { transform: rotate(0deg); }
+}
+
+/* ---------- タブレット縦向き: スクロールせず1画面に収める ---------- */
+@media (max-width: 1000px) and (min-width: 601px) and (min-height: 700px) and (orientation: portrait) {
+  body { overflow: hidden; }
+  .app { height: 100vh; height: 100dvh; min-height: 0; }
+  main { grid-template-rows: minmax(0, 1fr) auto; }
+  .side { flex-direction: row; }
+  .side .panel, .panel.hint-panel { flex: 1 1 0; height: 190px; max-height: none; overflow: hidden; }
+  .side .panel .hint, .side .panel .log { overflow: auto; min-height: 0; }
+  .hand-row { gap: 14px; }
+}
+
+/* ---------- スマホ横向き: 卓を3列（左: 自動操作・リセット / 中: 向聴・河 / 右: 待ち・操作）にする ---------- */
+@media (orientation: landscape) and (max-height: 500px) {
+  :root {
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --tile-lg-w: min(52px, calc((100vw - var(--safe-l) - var(--safe-r) - 40px) / 15.6));
+  }
+  body { overflow: hidden; font-size: 13px; }
+  .app {
+    height: 100vh; height: 100dvh; min-height: 0;
+    padding-left: var(--safe-l); padding-right: var(--safe-r);
+  }
+
+  .topbar { gap: 16px; padding: 3px 10px; flex-wrap: nowrap; }
+  .brand h1 { display: none; }
+  .brand .logo { font-size: 18px; }
+  .info-block .label { font-size: 9px; }
+  .info-block .value { font-size: 12px; white-space: nowrap; }
+  .info-block .value b { font-size: 16px; }
+  .info-block .value .wall-count { display: none; }
+  .dora { margin-top: 0; }
+  #btn-settings { padding: 4px 12px; font-size: 12px; }
+
+  main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); padding: 4px 8px 0; gap: 0; }
+  .side { display: none; }
+  .table {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0 8px;
+    padding: 6px 8px;
+    border-width: 3px;
+    border-radius: 12px;
+  }
+  .status-row { display: contents; }
+  .auto-toggles { grid-column: 1; grid-row: 1 / span 2; justify-self: start; font-size: 11px; padding: 4px 8px; gap: 2px; flex-direction: column; }
+  .auto-toggles .tg { white-space: nowrap; }
+  .status { grid-column: 2; grid-row: 1; justify-self: center; }
+  .shanten { font-size: 18px; letter-spacing: 0.08em; }
+  .waits-box { grid-column: 3; grid-row: 1 / span 2; justify-self: end; padding: 4px 8px; min-width: 0; }
+  .waits-list { gap: 4px; }
+  .river-wrap { grid-column: 2; grid-row: 2; height: 100%; padding-top: 14px; }
+  .river { --river-cols: 12; min-height: 0; }
+  .toast { font-size: 40px; }
+
+  /* 手牌エリア: 操作ボタン（右）とリセット（左）は卓の左右の余白に重ねる */
+  .hand-area { position: relative; overflow: visible; gap: 0; padding: 0 8px 6px; }
+  .actions {
+    position: absolute; right: 18px; bottom: calc(100% + 10px); z-index: 5;
+    flex-direction: column-reverse; align-items: flex-end; gap: 6px; min-height: 0;
+  }
+  .actions .btn { padding: 7px 14px; font-size: 13px; }
+  .mode-msg {
+    max-width: 150px; font-size: 11px; line-height: 1.35; text-align: right;
+    background: rgba(0, 0, 0, 0.55); padding: 3px 8px; border-radius: 6px;
+  }
+  .mode-msg:empty { display: none; }
+  .controls {
+    position: absolute; left: 18px; bottom: calc(100% + 10px); z-index: 5;
+    flex-direction: column; align-items: flex-start; gap: 6px; margin: 0;
+  }
+  .controls .btn, .btn.reset { padding: 6px 12px; font-size: 12px; }
+  .auto-status { font-size: 11px; max-width: 140px; background: rgba(0, 0, 0, 0.55); padding: 2px 8px; border-radius: 6px; }
+  .hand-row { min-height: 0; padding-top: 18px; padding-bottom: 2px; gap: 12px; }
+  body.show-keys .hand-row { padding-bottom: 2px; }
+  .hand { gap: 3px; }
+  .hand-gap { width: 10px; }
+  .tile .badge { font-size: 10px; top: -17px; padding: 0 5px; }
+
+  /* ダイアログ: 画面の高さに収めて中身をスクロール */
+  .modal { max-width: min(680px, 96vw); }
+  .modal-card { padding: 12px 18px; max-height: 94vh; max-height: 94dvh; overflow: auto; }
+  .modal-actions { margin-top: 10px; }
+  .settings-body { max-height: calc(94dvh - 110px); }
+  .result-title { font-size: 22px; }
+  .result-sub { margin-bottom: 6px; }
+  .result-hand { margin: 2px 0 6px; }
+  .yaku-list { max-height: none; }
+  .yaku-list li { font-size: 13px; padding: 3px 8px; }
+  .score { margin-top: 6px; }
+  .score .points { font-size: 26px; }
+}
+/* 横長の小さいウィンドウをマウス・キーボードで使う場合は手牌の下のキー表示の分を確保 */
+@media (orientation: landscape) and (max-height: 500px) and (hover: hover) {
+  body.show-keys .hand-row { padding-bottom: 24px; }
 }

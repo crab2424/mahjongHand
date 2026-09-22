@@ -42,6 +42,14 @@ const UI = (() => {
   const KEY_CHARS = { '1': 0, '2': 1, '3': 2, '4': 3, '5': 4, '6': 5, '7': 6, '8': 7, '9': 8, '0': 9, '-': 10, '^': 11, '=': 11, '¥': 12, '\\': 12 };
   const canHover = typeof matchMedia === 'function' && matchMedia('(hover: hover)').matches;
   const FAST_AUTO_MS = 500;    // これ未満の間隔は「高速」扱い（アニメーション省略・表示間引き）
+  const RIVER_MIN_SCALE = 0.55; // 河の牌を縮小する下限（これでも収まらなければスクロール）
+  // 操作ボタンのキー（拼音の頭文字＋ローマ字の別名）: 立直 lìzhí / 杠 gàng / 和 hú / 过 guò(見逃し)
+  const ACTION_KEYS = {
+    riichi: ['l', 'r'],
+    kan: ['g', 'k'],
+    tsumo: ['h', 't'],
+    pass: ['p'],
+  };
 
   let settings;
   let game;
@@ -63,7 +71,7 @@ const UI = (() => {
   function init() {
     settings = loadSettings();
     const ids = [
-      'round-info', 'dora', 'remaining', 'wall-count', 'turn', 'shanten', 'waits', 'waits-box', 'waits-title', 'waits-list',
+      'round-info', 'dora', 'remaining', 'wall-count', 'turn', 'shanten', 'waits-box', 'waits-title', 'waits-list',
       'river', 'riichi-stick', 'toast-layer', 'hint', 'log', 'hand', 'kans',
       'btn-draw', 'btn-tsumo', 'btn-riichi', 'btn-kan', 'btn-tsumogiri', 'btn-cancel', 'mode-msg',
       'btn-reset', 'btn-auto', 'auto-status', 'btn-settings', 'chk-hints', 'result-dialog', 'settings-dialog',
@@ -166,20 +174,33 @@ const UI = (() => {
 
     document.addEventListener('keydown', (e) => {
       if (els.settingsDialog.open) return;
-      if (e.key === 'Escape') {
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      const mod = e.ctrlKey || e.metaKey || e.altKey;
+      // クリック後にボタンへ残ったフォーカスで Enter / Space が二重に作用しないようにする
+      if ((k === 'Enter' || k === ' ') && e.target instanceof HTMLButtonElement && !els.resultDialog.open) e.preventDefault();
+      if (!mod && ACTION_KEYS.riichi.includes(k)) {
+        if (isShown(els.btnRiichi)) enterMode('riichi');
+        else if (mode === 'riichi') exitMode();
+      }
+      else if (!mod && ACTION_KEYS.kan.includes(k)) {
+        if (isShown(els.btnKan)) onKanButton();
+        else if (mode === 'kan') exitMode();
+      }
+      else if (!mod && ACTION_KEYS.tsumo.includes(k)) { if (isShown(els.btnTsumo)) doTsumo(); }
+      else if (!mod && ACTION_KEYS.pass.includes(k)) { if (isShown(els.btnTsumogiri) && game.drawn) doDiscard(game.drawn.id); }
+      else if (e.key === 'Escape') {
         if (auto.running) { stopAuto(); return; }
         if (mode !== 'normal') exitMode();
         if (selectedId !== null) { selectedId = null; applyHandState(); }
       }
-      else if (e.key === 'n' || e.key === 'N') { stopAuto(); resetGame(); }
-      else if (e.key === 'a' || e.key === 'A') toggleAuto();
-      else if (e.key === 't' || e.key === 'T') { if (!els.btnTsumo.classList.contains('hidden')) doTsumo(); }
-      else if (e.key === ' ') { if (!els.btnDraw.classList.contains('hidden')) { e.preventDefault(); doDraw(); } }
+      else if (!mod && k === 'n') { stopAuto(); resetGame(); }
+      else if (!mod && k === 'a') toggleAuto();
+      else if (e.key === ' ') { if (isShown(els.btnDraw)) { e.preventDefault(); doDraw(); } }
       else if (e.key === 'Enter') {
-        if (!els.btnDraw.classList.contains('hidden')) { e.preventDefault(); doDraw(); }
+        if (isShown(els.btnDraw)) { e.preventDefault(); doDraw(); }
         else if (game.drawn && game.phase === 'discard') { e.preventDefault(); onTileKey(game.drawn.id, game.drawn.kind); }
       }
-      else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      else if (!mod) {
         let idx = KEY_CODES.indexOf(e.code);
         if (idx < 0 && e.key in KEY_CHARS) idx = KEY_CHARS[e.key];
         if (idx >= 0 && idx < game.hand.length && game.phase === 'discard') {
@@ -188,6 +209,12 @@ const UI = (() => {
           onTileKey(t.id, t.kind);
         }
       }
+    });
+    // 画面サイズ・向きが変わったら河の縮小率を計算し直す
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(fitRiver, 100);
     });
     // 入場アニメーションのクラスは終了後に外す（hover 等の transform を有効にするため）
     document.addEventListener('animationend', (e) => {
@@ -583,7 +610,13 @@ const UI = (() => {
   function onTileClick(tileId, kind) {
     if (busy || game.phase !== 'discard') return;
     if (mode === 'riichi') {
-      if (game.riichiCandidates().includes(tileId)) doDiscard(tileId, true);
+      if (!game.riichiCandidates().includes(tileId)) return;
+      if (settings.clickMode === 'double' && selectedId !== tileId) {
+        selectedId = tileId;
+        applyHandState();
+        return;
+      }
+      doDiscard(tileId, true);
       return;
     }
     if (mode === 'kan') {
@@ -688,6 +721,31 @@ const UI = (() => {
   function renderRiver() {
     els.river.innerHTML = '';
     for (const d of game.discards) els.river.appendChild(riverTileEl(d));
+    fitRiver();
+  }
+
+  /**
+   * 河の牌を縮小して表示領域に収める（スクロールを極力発生させない）。
+   * 河の横幅は固定のまま、牌が小さくなった分だけ1行に並ぶ枚数を増やす。
+   */
+  function fitRiver() {
+    const wrap = els.river.parentElement;
+    const width = els.river.clientWidth;
+    const availH = wrap.clientHeight - parseFloat(getComputedStyle(wrap).paddingTop || 0);
+    if (!width || availH <= 0) return;
+    const n = els.river.children.length;
+    const baseCols = +getComputedStyle(els.river).getPropertyValue('--river-cols') || 14;
+    const baseW = width / baseCols - 3; // 等倍時の牌幅
+    const riichiExtra = els.river.querySelector('.riichi-tile') ? 1 : 0; // 横向きの宣言牌の分
+    let scale = 1;
+    for (let s = 1; s >= RIVER_MIN_SCALE - 1e-9; s -= 0.05) {
+      scale = s;
+      const w = baseW * s, h = w * 1.35;
+      const cols = Math.max(1, Math.floor((width + 3) / (w + 3)));
+      const rows = Math.max(3, Math.ceil((n + riichiExtra) / cols));
+      if (rows * (h + 3) <= availH) break;
+    }
+    els.river.style.setProperty('--river-scale', scale.toFixed(2));
   }
   function riverTileEl(d) {
     const el = tileEl(d.tile, { size: 'md' });
@@ -803,25 +861,18 @@ const UI = (() => {
     if (game.phase === 'end' && game.result && game.result.type === 'win') {
       els.shanten.textContent = 'ツモ和了';
       els.shanten.className = 'shanten complete';
-      els.waits.innerHTML = '';
       return;
     }
     if (game.drawn) {
       const s = game.currentShanten();
       els.shanten.className = 'shanten' + (s === -1 ? ' complete' : s === 0 ? ' tenpai' : '');
-      if (s === -1) {
-        els.shanten.textContent = '和了形！';
-        els.waits.innerHTML = '<span>「ツモ和了」で和了できます</span>';
-      } else {
-        els.shanten.innerHTML = `<span class="sub">打牌後</span>${Tiles.shantenLabel(s)}`;
-        els.waits.innerHTML = `<span class="muted">${auto.running ? '自動リセット中…' : game.riichi ? 'リーチ中：ツモ切り' : '捨てる牌を選んでください'}</span>`;
-      }
+      if (s === -1) els.shanten.textContent = '和了形！';
+      else els.shanten.innerHTML = `<span class="sub">打牌後</span>${Tiles.shantenLabel(s)}`;
       return;
     }
     const info = game.handInfo();
     els.shanten.textContent = Tiles.shantenLabel(info.shanten);
     els.shanten.className = 'shanten' + (info.shanten === 0 ? ' tenpai' : '');
-    els.waits.innerHTML = game.phase === 'draw' ? '<span class="muted">ツモ待ち</span>' : '';
   }
 
   /** 卓右上の待ち表示。13枚の手牌（ツモ牌を除く）が聴牌なら常に表示する */
@@ -924,11 +975,13 @@ const UI = (() => {
     show(els.btnTsumogiri, p === 'discard' && normal && active && game.riichi && (!!win || kanOpts.length > 0));
     show(els.btnCancel, !normal);
     show(els.btnShowResult, p === 'end' && !!game.result && !els.resultDialog.open && !auto.running);
-    els.modeMsg.textContent = mode === 'riichi' ? 'リーチ宣言牌（光っている牌）を選んでください'
+    els.modeMsg.textContent = mode === 'riichi'
+      ? `リーチ宣言牌（光っている牌）を選んでください${settings.clickMode === 'double' ? '（2回で確定）' : ''}`
       : mode === 'kan' ? 'カンする牌を選んでください' : '';
-    if (win) els.btnTsumo.textContent = `ツモ和了 ${win.limit ? `（${win.limit}）` : `（${win.fu}符 ${win.han}飜）`}`;
+    if (win) els.btnTsumo.querySelector('.lbl').textContent = `ツモ和了 ${win.limit ? `（${win.limit}）` : `（${win.fu}符 ${win.han}飜）`}`;
   }
   const show = (el, on) => el.classList.toggle('hidden', !on);
+  const isShown = (el) => !el.classList.contains('hidden');
 
   // =====================================================
   // アニメーション
@@ -939,9 +992,15 @@ const UI = (() => {
     const target = riverTileEl(d);
     target.style.visibility = 'hidden';
     els.river.appendChild(target);
+    fitRiver();
+    // 縮小しても収まらず着地点が見えない場合のみ、最小限スクロールする（通常は手動のみ）
     const wrap = els.river.parentElement;
-    wrap.scrollTop = wrap.scrollHeight; // 河が長い場合は末尾までスクロールしてから着地点を測る
-    const end = target.getBoundingClientRect();
+    const wr = wrap.getBoundingClientRect();
+    let end = target.getBoundingClientRect();
+    if (end.bottom > wr.bottom || end.top < wr.top) {
+      wrap.scrollTop += end.bottom > wr.bottom ? end.bottom - wr.bottom + 4 : end.top - wr.top - 4;
+      end = target.getBoundingClientRect();
+    }
 
     const ghost = fromEl.cloneNode(true);
     ghost.classList.remove('drawn', 'selected', 'candidate', 'enter-draw', 'enter-deal');
