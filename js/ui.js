@@ -81,7 +81,7 @@ const UI = (() => {
       'btn-draw', 'btn-tsumo', 'btn-riichi', 'btn-kan', 'btn-tsumogiri', 'btn-cancel', 'mode-msg',
       'btn-reset', 'btn-auto', 'auto-status', 'btn-settings', 'chk-hints', 'result-dialog', 'settings-dialog',
       'result-body', 'btn-result-next', 'btn-result-close', 'btn-show-result', 'table', 'tileset-note', 'settings-tabs',
-      'ad-editor', 'ad-progress', 'btn-autodiscard',
+      'want-editor', 'want-progress', 'btn-autodiscard',
     ];
     for (const id of ids) els[camel(id)] = document.getElementById(id);
     document.body.dataset.display = settings.display;
@@ -564,7 +564,7 @@ const UI = (() => {
 
   /** 自動ツモ切りボタンの横に進捗を表示 */
   function renderAdProgress(prog) {
-    const el = els.adProgress;
+    const el = els.wantProgress;
     const cfg = settings.autoDiscard;
     if (!settings.autoTsumogiriAll || !AutoDiscard.isActive(cfg) || !game) { el.innerHTML = ''; show(el, false); return; }
     prog = prog || adProgress();
@@ -572,19 +572,19 @@ const UI = (() => {
     const MAX_SHOWN = 4;
     prog.slice(0, MAX_SHOWN).forEach((p) => {
       const item = document.createElement('span');
-      item.className = 'adp-item' + (p.done ? ' done' : '');
+      item.className = 'wantp-item' + (p.done ? ' done' : '');
       item.textContent = `${p.label} ${Math.min(p.have, p.need)}/${p.need}`;
       el.appendChild(item);
     });
     if (prog.length > MAX_SHOWN) {
       const more = document.createElement('span');
-      more.className = 'adp-item';
+      more.className = 'wantp-item';
       more.textContent = `他${prog.length - MAX_SHOWN}`;
       el.appendChild(more);
     }
     if (ad.stopped) {
       const st = document.createElement('span');
-      st.className = 'adp-stop';
+      st.className = 'wantp-stop';
       st.textContent = '停止中';
       el.appendChild(st);
     }
@@ -594,7 +594,7 @@ const UI = (() => {
 
   /** 設定「自動」タブの欲しい牌の条件エディタ */
   function buildAdEditor() {
-    const root = els.adEditor;
+    const root = els.wantEditor;
     const cfg = settings.autoDiscard;
     const changed = () => {
       saveSettings();
@@ -606,10 +606,10 @@ const UI = (() => {
 
     // 上段: 停止条件・数え方・合計枚数（横に揃える）
     const head = document.createElement('div');
-    head.className = 'ad-head';
+    head.className = 'want-head';
     const field = (label, control) => {
       const f = document.createElement('label');
-      f.className = 'ad-field';
+      f.className = 'want-field';
       const l = document.createElement('span');
       l.textContent = label;
       f.append(l, control);
@@ -639,7 +639,7 @@ const UI = (() => {
     };
     const makeCell = (key, content, title) => {
       const cell = document.createElement('div');
-      cell.className = 'ad-cell';
+      cell.className = 'want-cell';
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'chip';
@@ -655,12 +655,12 @@ const UI = (() => {
 
     for (const g of AutoDiscard.GROUPS) {
       const row = document.createElement('div');
-      row.className = 'ad-group';
+      row.className = 'want-group';
       const l = document.createElement('span');
-      l.className = 'ad-label';
+      l.className = 'want-label';
       l.textContent = g.label;
       const grid = document.createElement('div');
-      grid.className = 'ad-grid';
+      grid.className = 'want-grid';
       for (const [key, text, title] of g.items) grid.appendChild(makeCell(key, text, title));
       row.append(l, grid);
       root.appendChild(row);
@@ -668,12 +668,12 @@ const UI = (() => {
     // 特定の牌: 萬子・筒子・索子・字牌を1行ずつ（山に無い牌種は空欄）
     const inWall = Tiles.kindsFromSettings(settings);
     const row = document.createElement('div');
-    row.className = 'ad-group';
+    row.className = 'want-group';
     const l = document.createElement('span');
-    l.className = 'ad-label';
+    l.className = 'want-label';
     l.textContent = '特定の牌';
     const grid = document.createElement('div');
-    grid.className = 'ad-grid tiles';
+    grid.className = 'want-grid tiles';
     for (let k = 0; k < 34; k++) {
       if (!inWall.has(k)) { grid.appendChild(document.createElement('div')); continue; }
       grid.appendChild(makeCell(`kind:${k}`, kindEl(k, 'sm', true), Tiles.info(k).label));
@@ -682,9 +682,9 @@ const UI = (() => {
     root.appendChild(row);
 
     const foot = document.createElement('div');
-    foot.className = 'ad-foot';
+    foot.className = 'want-foot';
     const summary = document.createElement('span');
-    summary.className = 'ad-summary';
+    summary.className = 'want-summary';
     const clear = document.createElement('button');
     clear.type = 'button';
     clear.className = 'btn ghost small';
@@ -717,7 +717,7 @@ const UI = (() => {
     const input = document.createElement('input');
     input.type = 'number';
     input.min = 1; input.max = 14; input.value = value;
-    input.className = 'ad-count';
+    input.className = 'want-count';
     input.addEventListener('change', () => {
       const v = AutoDiscard.clampCount(input.value);
       input.value = v;

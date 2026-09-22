@@ -96,7 +96,7 @@
         <button class="btn auto" id="btn-auto" type="button">▶ 自動リセット</button>
         <span class="auto-status hidden" id="auto-status"></span>
         <button class="btn autodiscard" id="btn-autodiscard" type="button" aria-pressed="false"><span class="lbl">▶ 自動ツモ切り</span><kbd class="btn-key">Z</kbd></button>
-        <span class="ad-progress hidden" id="ad-progress"></span>
+        <span class="want-progress hidden" id="want-progress"></span>
         <span class="hint-text"><kbd>1</kbd>〜<kbd>¥</kbd> 打牌 ・ <kbd>Enter</kbd> ツモ切り ／ <kbd>L</kbd> リーチ ・ <kbd>G</kbd> カン ・ <kbd>H</kbd> ツモ和了 ・ <kbd>P</kbd> 見逃し ／ <kbd>N</kbd> 配牌リセット ・ <kbd>A</kbd> 自動リセット ・ <kbd>Z</kbd> 自動ツモ切り ・ <kbd>Esc</kbd> 停止・キャンセル</span>
       </div>
     </footer>
@@ -160,7 +160,7 @@
         <section class="settings-page" data-page="auto" role="tabpanel">
           <h3>自動ツモ切り <small>下の「自動ツモ切り」ボタン（<kbd>Z</kbd>）で開始</small></h3>
           <p class="note flush">欲しい牌を選び、それぞれ目標枚数を決めます。欲しくない牌はツモ切り、欲しい牌が来たら手牌の欲しくない牌（牌効率で最も不要な牌）を切り、停止条件を満たしたら止まります。何も選ばなければ常にツモ切りします。</p>
-          <div id="ad-editor"></div>
+          <div id="want-editor"></div>
 
           <h3>配牌リセット</h3>
           <label class="check"><input type="checkbox" id="set-instantReset"> 簡略化（アニメーションを省略し、押した瞬間に切り替える）</label>
