@@ -18,6 +18,8 @@ const UI = (() => {
     autoKan: false,          // 自動カン
     autoTsumogiriAll: false, // 自動ツモ切り（下のボタン。条件があれば欲しい牌が来るまで）
     autoDiscard: null,       // 自動ツモ切りの欲しい牌の条件（AutoDiscard.normalize で補完）
+    adPassWin: false,        // 自動ツモ切り中、目標未達なら和了形を見逃して続ける
+    adPassKan: false,        // 自動ツモ切り中、目標未達ならカンせずに続ける
     hints: true,
     simulateOthers: false,
     maxDraws: 0,
@@ -33,7 +35,7 @@ const UI = (() => {
     'display', 'roundWind', 'seatWind', 'autoDraw', 'autoTsumogiri', 'clickMode', 'fastTsumo', 'showKeys',
     'instantReset', 'autoReset', 'autoResetInterval', 'autoResetShanten',
     'redDora', 'tileM19', 'tileM28', 'tileP19', 'tileP28', 'tileS19', 'tileS28', 'tileZ',
-    'maxDraws', 'simulateOthers',
+    'maxDraws', 'simulateOthers', 'adPassWin', 'adPassKan',
   ];
   const TILE_KEYS = Tiles.TILE_GROUPS.map((g) => g.key);
   const MIN_WALL_TILES = 40;   // 王牌14 + 配牌13 + 最低限のツモ
@@ -45,6 +47,9 @@ const UI = (() => {
   const canHover = typeof matchMedia === 'function' && matchMedia('(hover: hover)').matches;
   const FAST_AUTO_MS = 500;    // これ未満の間隔は「高速」扱い（アニメーション省略・表示間引き）
   const RIVER_MIN_SCALE = 0.55; // 河の牌を縮小する下限（これでも収まらなければスクロール）
+  const LOG_OPEN_KEY = 'soloMahjong.logOpen';
+  // スマホ横向き（右パネルを出さない）レイアウト。待ちは卓の右上に置く
+  const compactMQ = typeof matchMedia === 'function' ? matchMedia('(orientation: landscape) and (max-height: 500px)') : null;
   // 操作ボタンのキー（拼音の頭文字＋ローマ字の別名）: 立直 lìzhí / 杠 gàng / 和 hú / 过 guò(見逃し)
   const ACTION_KEYS = {
     riichi: ['l', 'r'],
@@ -81,12 +86,13 @@ const UI = (() => {
       'btn-draw', 'btn-tsumo', 'btn-riichi', 'btn-kan', 'btn-tsumogiri', 'btn-cancel', 'mode-msg',
       'btn-reset', 'btn-auto', 'auto-status', 'btn-settings', 'chk-hints', 'result-dialog', 'settings-dialog',
       'result-body', 'btn-result-next', 'btn-result-close', 'btn-show-result', 'table', 'tileset-note', 'settings-tabs',
-      'want-editor', 'want-progress', 'btn-autodiscard',
+      'want-editor', 'want-progress', 'btn-autodiscard', 'status-row', 'log-panel',
     ];
     for (const id of ids) els[camel(id)] = document.getElementById(id);
     document.body.dataset.display = settings.display;
     document.body.classList.toggle('show-keys', !!settings.showKeys);
     bindEvents();
+    placeWaitsBox();
     buildAdEditor();
     syncSettingsForm();
     syncAutoUI();
@@ -95,6 +101,15 @@ const UI = (() => {
   }
 
   const camel = (s) => s.replace(/-(\w)/g, (_, c) => c.toUpperCase());
+
+  /** 待ち表示の置き場所: 通常は右パネル（記録の上）、スマホ横向きは卓の右上 */
+  function placeWaitsBox() {
+    const compact = !!(compactMQ && compactMQ.matches);
+    if (compact) { if (els.waitsBox.parentNode !== els.statusRow) els.statusRow.appendChild(els.waitsBox); }
+    else if (els.waitsBox.nextElementSibling !== els.logPanel) els.logPanel.before(els.waitsBox);
+    els.waitsBox.classList.toggle('panel', !compact);
+    if (game) { waitsKey = ''; renderWaitsBox(); }
+  }
 
   function loadSettings() {
     let s;
@@ -147,6 +162,15 @@ const UI = (() => {
     els.btnResultNext.addEventListener('click', () => { els.resultDialog.close(); resetGame(); });
     els.btnResultClose.addEventListener('click', () => { els.resultDialog.close(); renderActions(); });
     els.btnShowResult.addEventListener('click', () => { if (game.result) showResult(game.result); });
+    // 記録は折りたたみ（開閉を記憶）
+    try { els.logPanel.open = localStorage.getItem(LOG_OPEN_KEY) === '1'; } catch (e) { /* ignore */ }
+    els.logPanel.addEventListener('toggle', () => {
+      try { localStorage.setItem(LOG_OPEN_KEY, els.logPanel.open ? '1' : '0'); } catch (e) { /* ignore */ }
+    });
+    if (compactMQ) {
+      if (compactMQ.addEventListener) compactMQ.addEventListener('change', placeWaitsBox);
+      else if (compactMQ.addListener) compactMQ.addListener(placeWaitsBox);
+    }
 
     // 卓上の自動操作トグル
     for (const key of AUTO_KEYS) {
@@ -490,10 +514,16 @@ const UI = (() => {
         return;
       }
     }
-    if (game.canTsumo() || game.kanOptions().length > 0) return;
+    const canWin = game.canTsumo();
+    const canKan = game.kanOptions().length > 0;
     let target = null;
-    if (game.riichi && settings.autoTsumogiri) target = game.drawn.id;
-    else if (settings.autoTsumogiriAll) target = autoDiscardTarget();
+    if (game.riichi && settings.autoTsumogiri && !canWin && !canKan) target = game.drawn.id;
+    else if (settings.autoTsumogiriAll) {
+      // 和了・カンできるときは止まる（設定で見逃すなら続け、目標達成なら autoDiscardTarget が止める）
+      if ((canWin && !settings.adPassWin) || (canKan && !settings.adPassKan)) return;
+      target = autoDiscardTarget();
+      if (target !== null && canWin) log(`${game.turn}巡目`, '自動ツモ切り 和了形を見逃し');
+    }
     if (target === null) return;
     await sleep(wait);
     if (g !== gen || busy || game.phase !== 'discard' || !game.drawn) return;
@@ -1230,18 +1260,28 @@ const UI = (() => {
     els.shanten.className = 'shanten' + (info.shanten === 0 ? ' tenpai' : '');
   }
 
-  /** 卓右上の待ち表示。13枚の手牌（ツモ牌を除く）が聴牌なら常に表示する */
+  /**
+   * 待ち表示（右パネル。スマホ横向きは卓右上）。13枚の手牌（ツモ牌を除く）が聴牌なら常に表示する。
+   * 聴牌でないとき、右パネルでは案内を出し、卓右上では隠す。
+   */
   function renderWaitsBox() {
     const preview = hoverPreview;
     const info = preview ? { shanten: 0, waits: preview.waits }
       : game.phase === 'end' && game.result && game.result.type === 'win' ? { shanten: 1, waits: [] } : game.handInfo();
+    const inPanel = els.waitsBox.parentNode !== els.statusRow;
     if (info.shanten !== 0) {
-      waitsKey = '';
-      show(els.waitsBox, false);
+      els.waitsBox.classList.remove('preview');
+      els.waitsBox.classList.add('empty');
+      show(els.waitsBox, inPanel);
+      if (waitsKey === 'none') return;
+      waitsKey = 'none';
+      els.waitsTitle.textContent = '待ち';
+      els.waitsList.innerHTML = '<p class="muted">聴牌すると待ち牌と残り枚数を表示します</p>';
       return;
     }
     const key = `${preview ? `p${preview.kind}` : game.riichi ? 'r' : ''}:${info.waits.map((w) => `${w.kind}/${w.left}`).join(',')}`;
     show(els.waitsBox, true);
+    els.waitsBox.classList.remove('empty');
     els.waitsBox.classList.toggle('preview', !!preview);
     if (key === waitsKey) return; // 内容が同じなら再描画しない（アニメーションの再生を防ぐ）
     waitsKey = key;

@@ -105,8 +105,8 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: 4px;
+  padding: 14px 20px 18px;
   min-height: 0;
   overflow: hidden;
 }
@@ -125,7 +125,24 @@ main {
   display: flex;
   flex-direction: column;
 }
-.panel.grow { flex: 1; overflow: hidden; }
+/* 右パネルの待ち（記録の代わりに残りの高さを使う） */
+.side .waits-box { flex: 1 1 auto; min-height: 90px; overflow: hidden; animation: none; }
+.side .waits-box .waits-list { overflow: auto; min-height: 0; align-content: flex-start; padding: 4px 2px 2px; }
+.side .waits-box.empty .waits-list { display: block; font-size: 12px; padding: 0; }
+.side .waits-box.empty .waits-list p { margin: 0; }
+.side .waits-box:not(.empty) { border-color: rgba(255, 213, 74, 0.35); }
+.side .waits-box.preview { border-color: rgba(79, 195, 247, 0.6); background: rgba(10, 40, 60, 0.45); }
+.side .waits-box .waits-title { font-size: 12px; margin: 0 0 6px; }
+.side .waits-box.empty .waits-title { color: var(--muted); }
+/* 記録（折りたたみ） */
+.panel.log-panel { display: block; flex: 0 0 auto; padding-top: 8px; padding-bottom: 8px; }
+.log-panel summary { list-style: none; cursor: pointer; user-select: none; }
+.log-panel summary::-webkit-details-marker { display: none; }
+.log-panel summary h2 { margin: 0; justify-content: flex-start; gap: 6px; }
+.log-panel summary h2::before { content: "▸"; display: inline-block; transition: transform 0.2s; }
+.log-panel[open] summary h2::before { transform: rotate(90deg); }
+.log-panel summary:hover h2 { color: var(--text); }
+.log-panel[open] .log { margin-top: 8px; max-height: 30vh; }
 .panel.hint-panel { flex: 0 1 auto; max-height: 58%; }
 .panel.hint-panel .hint { overflow: auto; min-height: 0; }
 .panel h2 {
@@ -143,7 +160,7 @@ main {
 .status-row {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  align-items: start;
+  align-items: center;
   width: 100%;
   gap: 8px;
 }
@@ -160,12 +177,13 @@ main {
   grid-column: 1;
   justify-self: start;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;          /* 1行にして状態表示の行を低く保つ */
+  flex-wrap: wrap;
+  gap: 4px 12px;
   background: rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   font-size: 12px;
 }
 .auto-toggles .tg { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; color: rgba(255,255,255,0.85); }
@@ -177,8 +195,8 @@ main {
 .want-progress .wantp-item.done { color: var(--win); }
 .want-progress .wantp-item.done::before { content: "✓ "; }
 .want-progress .wantp-stop { color: var(--accent); white-space: nowrap; }
-/* 卓右上の待ち表示（聴牌中は常に表示） */
-.waits-box {
+/* 待ち表示（聴牌中は常に表示）。通常は右パネル、スマホ横向きは卓右上 */
+.status-row .waits-box {
   grid-column: 3;
   justify-self: end;
   background: rgba(0, 0, 0, 0.32);
@@ -190,7 +208,7 @@ main {
   animation: fadeIn 0.3s ease both;
 }
 .waits-title { font-size: 11px; color: var(--accent); letter-spacing: 0.1em; margin-bottom: 4px; white-space: nowrap; display: flex; align-items: center; gap: 3px; }
-.waits-box.preview { border-color: rgba(79, 195, 247, 0.6); background: rgba(10, 40, 60, 0.45); }
+.status-row .waits-box.preview { border-color: rgba(79, 195, 247, 0.6); background: rgba(10, 40, 60, 0.45); }
 .waits-box.preview .waits-title { color: #7fd4ff; }
 .waits-box.preview .waits-list .total { color: #7fd4ff; }
 .waits-list { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px; font-size: 12px; }
@@ -223,7 +241,7 @@ main {
   flex: 1;
   min-height: 0;
   width: 100%;
-  padding-top: 16px;          /* リーチ棒の分 */
+  padding-top: 14px;          /* リーチ棒の分 */
   overflow-y: auto;           /* 河が長くなったらスクロール */
   overflow-x: hidden;
   scrollbar-width: thin;
@@ -903,3 +921,7 @@ button, label, .tile { touch-action: manipulation; -webkit-tap-highlight-color: 
 @media (orientation: landscape) and (max-height: 500px) and (hover: hover) {
   body.show-keys .hand-row { padding-bottom: 24px; }
 }
+
+/* 折りたたんだ記録は見出しの高さだけにする（横並びレイアウトでも伸ばさない） */
+.side .log-panel:not([open]) { flex: 0 0 auto; height: auto; max-height: none; }
+@media (max-width: 1000px) { .side .log-panel:not([open]) { align-self: flex-start; } }
