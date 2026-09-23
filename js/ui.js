@@ -67,7 +67,7 @@ const UI = (() => {
   let hoverPreview = null;   // ホバー中の牌を切った場合の待ち（聴牌になる場合のみ）
   const auto = { running: false, timer: null, count: 0, lastRender: 0 };
   // 条件付き自動ツモ切りの状態（ツモ累計・目標達成で停止中か）
-  const ad = { draws: {}, countedId: null, stopped: false };
+  const ad = { draws: {}, countedId: null, stopped: false, checked: '' };
   const els = {};
 
   // =====================================================
@@ -275,6 +275,7 @@ const UI = (() => {
     } else if (key === 'roundWind' || key === 'seatWind') {
       renderHeader();
       renderActions();
+      buildAdEditor();
     } else if (key === 'autoDraw') {
       renderActions();
       if (settings.autoDraw && game.phase === 'draw' && !busy) doDraw();
@@ -289,6 +290,8 @@ const UI = (() => {
       syncAutoUI();
     } else if (TILE_KEYS.includes(key)) {
       updateTilesetNote();
+      buildAdEditor();
+    } else if (key === 'redDora') {
       buildAdEditor();
     }
   }
@@ -502,13 +505,21 @@ const UI = (() => {
     ad.draws = {};
     ad.countedId = null;
     ad.stopped = false;
+    ad.checked = '';
   }
   const adCtx = () => ({ doraKinds: game.doraKinds, roundWind: settings.roundWind, seatWind: settings.seatWind });
   const adHeld = () => game.fullTiles().concat(...game.kans.map((k) => k.tiles));
   const adProgress = () => AutoDiscard.progress(settings.autoDiscard, ad.draws, adHeld(), adCtx());
+  /** 局の山・ドラで条件が達成できるか */
+  const adFeasibility = () => AutoDiscard.feasibility(settings.autoDiscard,
+    Tiles.makeWall(game.opts.redDora, game.opts.kinds), adCtx(), 14 + game.kans.length);
 
   /** 自動ツモ切りの ON/OFF（下のボタン・Z キー）。ON にするたびにカウントをリセット */
   async function toggleAutoDiscard() {
+    if (!settings.autoTsumogiriAll && game && AutoDiscard.isActive(settings.autoDiscard)) {
+      const f = adFeasibility();
+      if (!f.ok) { showToast(`達成できない条件です: ${f.messages[0]}`, true); return; }
+    }
     settings.autoTsumogiriAll = !settings.autoTsumogiriAll;
     saveSettings();
     resetAd();
@@ -529,13 +540,26 @@ const UI = (() => {
 
   /**
    * 自動ツモ切りで切る牌の id。止まる場合は null。
-   * 条件が無ければ常にツモ切り。条件があれば、欲しくない牌はツモ切り、欲しい牌なら
-   * 手牌の欲しくない牌（牌効率で最も不要）を手出しし、目標に達したら止まる。
+   * 条件が無ければ常にツモ切り。条件があれば、目標に足りない枚数を最も増やさない牌を切り
+   * （欲しくない牌 → 目標を超えた牌の順。ツモ牌が最善ならツモ切り）、目標に達したら止まる。
    */
   function autoDiscardTarget() {
     const cfg = settings.autoDiscard;
     if (!AutoDiscard.isActive(cfg)) return game.drawn.id;
     if (ad.stopped) return null;
+    // 配牌・カンのたびにドラを含めて達成できるか判定し直す
+    const checkKey = `${game.doraCount}:${game.kans.length}`;
+    if (ad.checked !== checkKey) {
+      ad.checked = checkKey;
+      const f = adFeasibility();
+      if (!f.ok) {
+        ad.stopped = true;
+        renderAdProgress();
+        showToast(`達成できない条件です: ${f.messages[0]}`, true);
+        log(`${game.turn}巡目`, '自動ツモ切り 停止（達成できない条件）');
+        return null;
+      }
+    }
     const ctx = adCtx();
     const tile = game.drawn;
     if (tile.id !== ad.countedId) {
@@ -551,15 +575,12 @@ const UI = (() => {
       return null;
     }
     renderAdProgress(prog);
-    if (game.riichi || !AutoDiscard.isWanted(tile, cfg, ctx)) return tile.id;
-    const pick = AutoDiscard.pickDiscard(game.fullTiles(), cfg, ctx, analysis || game.analysis());
-    if (!pick) {
-      ad.stopped = true;
-      renderAdProgress(prog);
-      showToast('切れる牌がありません', true);
-      return null;
-    }
-    return pick.id;
+    if (game.riichi) return tile.id;
+    const pick = AutoDiscard.pickDiscard(game.fullTiles(), cfg, ctx, analysis || game.analysis(), {
+      drawnId: tile.id,
+      kanTiles: game.kans.flatMap((k) => k.tiles),
+    });
+    return pick ? pick.id : null;
   }
 
   /** 自動ツモ切りボタンの横に進捗を表示 */
@@ -603,8 +624,12 @@ const UI = (() => {
       refreshEditor();
     };
     root.innerHTML = '';
+    // 設定画面ではドラは未定（他の項目と重ならない4枚とみなす）
+    const wall = Tiles.makeWall(settings.redDora, Tiles.kindsFromSettings(settings));
+    const ctx = { doraKinds: null, roundWind: settings.roundWind, seatWind: settings.seatWind };
+    const maxOf = (key) => Math.max(1, Math.min(14, AutoDiscard.available(key, wall, ctx)));
 
-    // 上段: 停止条件・数え方・合計枚数（横に揃える）
+    // 上段: 停止条件・数え方・合計枚数・手出しの選び方（横に揃える）
     const head = document.createElement('div');
     head.className = 'want-head';
     const field = (label, control) => {
@@ -616,21 +641,38 @@ const UI = (() => {
       head.appendChild(f);
       return f;
     };
-    const comb = document.createElement('select');
-    comb.innerHTML = '<option value="or">どれか1つ達成（OR）</option><option value="and">すべて達成（AND）</option><option value="sum">合計枚数</option>';
-    comb.value = cfg.combine;
-    comb.addEventListener('change', () => { cfg.combine = comb.value; changed(); });
-    field('停止条件', comb);
-    const mode = document.createElement('select');
-    mode.innerHTML = '<option value="draw">ツモった枚数（累計）</option><option value="hold">手牌に持つ枚数</option>';
-    mode.value = cfg.countMode;
-    mode.addEventListener('change', () => { cfg.countMode = mode.value; changed(); });
-    field('数え方', mode);
-    const total = countInput(cfg.total, (v) => { cfg.total = v; changed(); });
-    const totalField = field('合計枚数', total);
+    const select = (html, value, onChange) => {
+      const el = document.createElement('select');
+      el.innerHTML = html;
+      el.value = value;
+      el.addEventListener('change', () => onChange(el.value));
+      return el;
+    };
+    field('停止条件', select('<option value="or">どれか1つ達成（OR）</option><option value="and">すべて達成（AND）</option><option value="sum">合計枚数</option>',
+      cfg.combine, (v) => { cfg.combine = v; changed(); }));
+    field('数え方', select('<option value="draw">ツモった枚数（累計）</option><option value="hold">手牌に持つ枚数</option>',
+      cfg.countMode, (v) => { cfg.countMode = v; changed(); }));
+    field('手出しの選び方', select('<option value="efficiency">牌効率（最も不要な牌）</option><option value="keep">向聴を保ってランダム</option><option value="random">完全ランダム</option>',
+      cfg.pick, (v) => { cfg.pick = v; changed(); }));
+    const total = stepper(() => cfg.total, 14, (v) => { cfg.total = v; changed(); });
+    const totalField = field('合計枚数', total.el);
     root.appendChild(head);
 
-    const cells = []; // { key, el, input }
+    // 選択中の項目（目標枚数はここで調整）
+    const selRow = document.createElement('div');
+    selRow.className = 'want-group';
+    const selLabel = document.createElement('span');
+    selLabel.className = 'want-label';
+    selLabel.textContent = '選択中';
+    const selBox = document.createElement('div');
+    selBox.className = 'want-selected';
+    selRow.append(selLabel, selBox);
+    root.appendChild(selRow);
+    const warn = document.createElement('div');
+    warn.className = 'want-warn';
+    root.appendChild(warn);
+
+    const cells = []; // { key, chip, badge }
     const itemOf = (key) => cfg.items.find((it) => it.key === key);
     const toggle = (key) => {
       const i = cfg.items.findIndex((it) => it.key === key);
@@ -638,19 +680,17 @@ const UI = (() => {
       changed();
     };
     const makeCell = (key, content, title) => {
-      const cell = document.createElement('div');
-      cell.className = 'want-cell';
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'chip';
+      b.className = 'chip want-chip';
       if (typeof content === 'string') b.textContent = content; else { b.classList.add('tile-chip'); b.appendChild(content); }
       b.title = title;
       b.addEventListener('click', () => toggle(key));
-      const input = countInput(1, (v) => { const it = itemOf(key); if (it) { it.count = v; changed(); } });
-      input.title = '目標枚数';
-      cell.append(b, input);
-      cells.push({ key, cell, chip: b, input });
-      return cell;
+      const badge = document.createElement('span');
+      badge.className = 'want-badge';
+      b.appendChild(badge);
+      cells.push({ key, chip: b, badge });
+      return b;
     };
 
     for (const g of AutoDiscard.GROUPS) {
@@ -696,14 +736,49 @@ const UI = (() => {
     function refreshEditor() {
       const sum = cfg.combine === 'sum';
       totalField.classList.toggle('hidden', !sum);
-      total.value = cfg.total;
+      total.sync();
       for (const c of cells) {
         const it = itemOf(c.key);
         c.chip.setAttribute('aria-pressed', String(!!it));
-        c.cell.classList.toggle('on', !!it);
-        c.input.classList.toggle('hidden', !it || sum);
-        if (it) c.input.value = it.count;
+        c.badge.textContent = it && !sum ? `×${it.count}` : '';
+        c.badge.classList.toggle('hidden', !it || sum);
       }
+      // 選択中の一覧
+      selBox.innerHTML = '';
+      if (cfg.items.length === 0) {
+        const e = document.createElement('span');
+        e.className = 'want-empty';
+        e.textContent = '未選択（下の項目を押して追加）';
+        selBox.appendChild(e);
+      }
+      for (const it of cfg.items) {
+        const sel = document.createElement('span');
+        sel.className = 'want-sel';
+        const name = document.createElement('span');
+        name.className = 'want-sel-name';
+        if (it.key.startsWith('kind:')) name.appendChild(kindEl(+it.key.slice(5), 'xs', true));
+        else name.textContent = AutoDiscard.shortLabel(it.key);
+        sel.appendChild(name);
+        if (!sum) sel.appendChild(stepper(() => it.count, maxOf(it.key), (v) => { it.count = v; changed(); }).el);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'want-del';
+        del.textContent = '✕';
+        del.title = '解除';
+        del.setAttribute('aria-label', `${AutoDiscard.shortLabel(it.key)}を解除`);
+        del.addEventListener('click', () => toggle(it.key));
+        sel.appendChild(del);
+        selBox.appendChild(sel);
+      }
+      const f = AutoDiscard.feasibility(cfg, wall, ctx);
+      warn.innerHTML = '';
+      for (const m of f.messages) {
+        const d = document.createElement('div');
+        d.textContent = (f.ok ? '注意: ' : '達成できません: ') + m;
+        warn.appendChild(d);
+      }
+      warn.classList.toggle('soft', f.ok);
+      show(warn, f.messages.length > 0);
       clear.disabled = cfg.items.length === 0;
       summary.textContent = cfg.items.length === 0
         ? '条件なし: 常にツモ切りします'
@@ -712,18 +787,31 @@ const UI = (() => {
     refreshEditor();
   }
 
-  /** 目標枚数の入力欄（1〜14） */
-  function countInput(value, onChange) {
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = 1; input.max = 14; input.value = value;
-    input.className = 'want-count';
-    input.addEventListener('change', () => {
-      const v = AutoDiscard.clampCount(input.value);
-      input.value = v;
-      onChange(v);
-    });
-    return input;
+  /** 目標枚数の − n ＋（1〜max） */
+  function stepper(get, max, onChange) {
+    const el = document.createElement('span');
+    el.className = 'stepper';
+    const minus = document.createElement('button');
+    const plus = document.createElement('button');
+    const val = document.createElement('span');
+    val.className = 'stepper-val';
+    minus.type = plus.type = 'button';
+    minus.textContent = '−';
+    plus.textContent = '+';
+    minus.setAttribute('aria-label', '減らす');
+    plus.setAttribute('aria-label', '増やす');
+    const sync = () => {
+      const v = get();
+      val.textContent = v;
+      minus.disabled = v <= 1;
+      plus.disabled = v >= max;
+    };
+    const step = (d) => onChange(Math.min(max, Math.max(1, get() + d)));
+    minus.addEventListener('click', () => step(-1));
+    plus.addEventListener('click', () => step(1));
+    el.append(minus, val, plus);
+    sync();
+    return { el, sync };
   }
 
   async function doDiscard(tileId, declareRiichi = false) {

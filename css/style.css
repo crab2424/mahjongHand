@@ -650,24 +650,50 @@ button.tile.locked:disabled { cursor: not-allowed; }
 .btn:disabled { opacity: 0.45; cursor: default; }
 /* 自動ツモ切りのルール編集 */
 #want-editor { display: flex; flex-direction: column; gap: 10px; }
-.want-head { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+.want-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 12px; }
 .want-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; }
 .want-field select { width: 100%; }
+.want-field .stepper { align-self: flex-start; }
 .want-group { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: start; }
 .want-label { font-size: 12px; color: var(--muted); padding-top: 5px; }
-/* 項目は縦横に揃うグリッド（どの行も同じ列幅） */
+/* 項目は縦横に揃うグリッド（どの行も同じ列幅）。選択しても大きさは変わらない */
 .want-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 5px; }
-.want-grid.tiles { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }
-.want-cell { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.want-grid.tiles .want-cell { flex-direction: column; }
-.want-cell .chip { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.want-grid.tiles .want-cell .chip { flex: none; }
-.want-count {
-  width: 44px; flex: none; background: #0f1520; color: var(--text); border: 1px solid rgba(255,255,255,0.25);
-  border-radius: 6px; padding: 3px 4px; font-size: 13px; text-align: center;
+.want-grid.tiles { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; justify-items: center; }
+.want-chip { position: relative; min-width: 0; white-space: nowrap; overflow: visible; text-overflow: ellipsis; }
+.want-badge {
+  position: absolute; top: -6px; right: -4px; min-width: 18px; padding: 0 4px; border-radius: 999px;
+  background: #0f1520; color: var(--accent); border: 1px solid var(--accent);
+  font-size: 11px; font-weight: 700; line-height: 16px; text-align: center; pointer-events: none;
 }
-.want-grid.tiles .want-count { width: 100%; max-width: 44px; padding: 1px 2px; font-size: 12px; }
-.want-count.hidden { display: none; }
+.want-badge.hidden { display: none; }
+/* 選択中の項目と目標枚数 */
+.want-selected { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; align-items: center; }
+.want-empty { font-size: 12px; color: var(--muted); }
+.want-sel {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 10px;
+  border: 1px solid rgba(255, 213, 74, 0.5); border-radius: 999px; font-size: 12px; white-space: nowrap;
+}
+.want-sel-name { display: inline-flex; align-items: center; line-height: 0; }
+.want-sel-name:not(:has(.tile)) { line-height: 1.4; }
+.want-del {
+  border: none; background: transparent; color: var(--muted); cursor: pointer;
+  width: 22px; height: 22px; border-radius: 50%; font-size: 12px; line-height: 1;
+}
+.want-del:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+.stepper {
+  display: inline-flex; align-items: center; background: #0f1520;
+  border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; overflow: hidden;
+}
+.stepper button {
+  border: none; background: transparent; color: var(--text); cursor: pointer;
+  width: 24px; height: 24px; font-size: 15px; line-height: 1;
+}
+.stepper button:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+.stepper button:disabled { opacity: 0.3; cursor: default; }
+.stepper-val { min-width: 20px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.want-warn { font-size: 12px; color: #ff8a80; margin-top: -4px; }
+.want-warn.soft { color: var(--muted); }
+.want-warn.hidden { display: none; }
 .chip {
   border: 1px solid rgba(255,255,255,0.18); background: transparent; color: var(--text);
   border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; line-height: 1.4;
@@ -738,7 +764,6 @@ button.tile.locked:disabled { cursor: not-allowed; }
   body.show-keys .tile .key { display: none; }
   body.show-keys .hand-row { padding-bottom: 6px; }
   .tileset-grid { grid-template-columns: 1fr; }
-  .want-head { grid-template-columns: 1fr; }
   .hand { gap: 2px; }
   .hand-area { padding-left: 8px; padding-right: 8px; }
   .hint-text { display: none; }

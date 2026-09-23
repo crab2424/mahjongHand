@@ -322,13 +322,74 @@ console.log('条件付き自動ツモ切り');
   eq(A.progress(hold, {}, P('77z123m'), ctx)[0].done, true, '保持数');
 
   // 手出し: 欲しくない牌のうち牌効率で最も不要な牌
-  const want = cfg({ items: [{ key: 'suit:s', count: 1 }] });
+  const want = cfg({ items: [{ key: 'suit:s', count: 9 }], countMode: 'hold' });
   const tiles = P('123s456s789s1m5p9p11z');
   const rows = Shanten.analyzeDiscards(Tiles.counts(tiles), 0);
-  const pick = A.pickDiscard(tiles, want, ctx, rows, () => 0);
+  const pick = A.pickDiscard(tiles, want, ctx, rows, { rand: () => 0 });
   eq([0, 13, 17].includes(pick.kind), true, '索子と対子を残して孤立牌を切る');
-  eq(A.pickDiscard(P('123s456s789s11s'), want, ctx, rows), null, '全部欲しい牌なら候補なし');
-  eq(A.pickDiscard(P('0p5p'), cfg({ items: [{ key: 'kind:33', count: 1 }] }), ctx, [], () => 0).red, false, '同種なら赤でない方を切る');
+  eq(A.pickDiscard(P('0p5p'), cfg({ items: [{ key: 'kind:33', count: 1 }] }), ctx, [], { rand: () => 0 }).red, false, '同種なら赤でない方を切る');
+  const drawnP = T('9p');
+  drawnP.id = 500;
+  eq(A.pickDiscard(P('123s456s789s1m5p11z').concat([drawnP]), want, ctx, rows, { drawnId: 500 }).id, 500,
+    '欲しくない牌を引いたらツモ切り');
+
+  // 目標を超えた牌は切れる（純正九蓮: 1萬×3・2〜8萬×1・9萬×3、AND・保持数）
+  const chuuren = cfg({ combine: 'and', countMode: 'hold', items: [{ key: 'kind:0', count: 3 },
+    ...[1, 2, 3, 4, 5, 6, 7].map((k) => ({ key: `kind:${k}`, count: 1 })), { key: 'kind:8', count: 3 }] });
+  const ch = P('2234056778899m');
+  const drawn8 = ch.find((t) => t.kind === 7);
+  const chPick = A.pickDiscard(ch, chuuren, ctx, Shanten.analyzeDiscards(Tiles.counts(ch), 0), { drawnId: drawn8.id });
+  eq(chPick.id, drawn8.id, '全部欲しい牌でも目標を超えた牌（3枚目の8萬）を切る');
+  const chRows = Shanten.analyzeDiscards(Tiles.counts(ch), 0);
+  for (let i = 0; i < 20; i++) {
+    const t = A.pickDiscard(ch, chuuren, ctx, chRows, { rand: Math.random });
+    if (![1, 4, 6, 7].includes(t.kind) || t.red) { eq(t, 'surplus', '余っている牌（2・5・7・8萬）だけを切る'); break; }
+    if (i === 19) eq(true, true, '余っている牌（2・5・7・8萬、赤5は残す）だけを切る');
+  }
+  eq(A.pickDiscard(P('1m2m2m1p'), chuuren, ctx, [], { rand: () => 0 }).kind, 9, '欲しくない牌が先、余りは後');
+  eq(A.pickDiscard(P('1m2m2m'), chuuren, ctx, [], { rand: () => 0 }).kind, 1, '欲しくない牌が無ければ余りを切る');
+
+  // どの牌も目標に足りなくても、損の最も小さい牌を切って続ける（萬子×10 AND 中張×10）
+  const mixed = cfg({ combine: 'and', countMode: 'hold', items: [{ key: 'suit:m', count: 10 }, { key: 'num:simple', count: 10 }] });
+  const stuck = P('1111999m234567p2m');
+  const stuckPick = A.pickDiscard(stuck, mixed, ctx, [], { rand: () => 0 });
+  eq(stuckPick.kind !== 1, true, '萬子の中張（2項目に合う）は残す');
+
+  // 手出しの選び方
+  const pickTiles = P('123m456p789s11z2z3z5z');
+  const pickRows = Shanten.analyzeDiscards(Tiles.counts(pickTiles), 0);
+  const none = cfg({ items: [{ key: 'kind:33', count: 1 }] });
+  const picks = (method) => {
+    const set = new Set();
+    for (let i = 0; i < 200; i++) set.add(A.pickDiscard(pickTiles, Object.assign({}, none, { pick: method }), ctx, pickRows).kind);
+    return [...set].sort((x, y) => x - y);
+  };
+  eq(picks('keep'), [28, 29, 31], '向聴を保ってランダム: 向聴が変わらない孤立字牌から選ぶ');
+  eq(picks('random').length > 3, true, '完全ランダム: 面子の牌も切りうる');
+  eq(A.normalize({ pick: 'keep' }).pick, 'keep', '選び方を保存');
+  eq(A.normalize({ pick: 'bogus' }).pick, 'efficiency', '不正な選び方は牌効率');
+
+  // 達成できるか
+  const wall = Tiles.makeWall(true);
+  const nodora = { doraKinds: null, roundWind: 27, seatWind: 28 };
+  const ok = (o) => A.feasibility(cfg(Object.assign({ combine: 'and', countMode: 'hold' }, o)), wall, nodora);
+  eq(ok({ items: [{ key: 'suit:m', count: 9 }, { key: 'num:simple', count: 9 }] }).ok, true, '重なる項目は合計18でも達成可能');
+  eq(ok({ items: [{ key: 'kind:0', count: 5 }] }).messages, ['1萬は山に4枚までです'], '1種は4枚まで');
+  eq(ok({ items: [{ key: 'dora:red', count: 4 }] }).ok, false, '赤ドラは3枚まで');
+  eq(ok({ items: [{ key: 'kind:0', count: 4 }, { key: 'kind:8', count: 4 }, { key: 'kind:4', count: 4 }, { key: 'kind:27', count: 3 }] }).ok,
+    false, '重ならない15枚は揃わない');
+  eq(ok(chuuren).ok, true, '純正九蓮は達成可能');
+  eq(ok({ items: [{ key: 'kind:0', count: 4 }, { key: 'kind:8', count: 4 }, { key: 'kind:4', count: 4 }, { key: 'kind:27', count: 3 }], countMode: 'draw' }).ok,
+    true, 'ツモ累計は14枚の制限なし');
+  eq(ok({ combine: 'or', items: [{ key: 'kind:0', count: 5 }, { key: 'kind:1', count: 2 }] }).ok, true, 'OR はどれか1つ達成できればよい');
+  eq(ok({ combine: 'sum', total: 9, items: [{ key: 'kind:0', count: 1 }, { key: 'kind:1', count: 1 }] }).messages,
+    ['合計9枚は揃いません（最大8枚）'], '合計は該当する牌の枚数まで');
+  eq(A.feasibility(cfg({ combine: 'and', countMode: 'hold', items: [{ key: 'dora:dora', count: 4 }, { key: 'suit:p', count: 11 }] }),
+    wall, Object.assign({}, nodora, { doraKinds: [0] })).ok, false, '実際のドラ（1萬）では筒子と重ならず15枚');
+  eq(A.feasibility(cfg({ combine: 'and', countMode: 'hold', items: [{ key: 'dora:dora', count: 4 }, { key: 'suit:p', count: 11 }] }),
+    wall, Object.assign({}, nodora, { doraKinds: [9] })).ok, true, '実際のドラ（1筒）なら重なって達成可能');
+  eq(A.feasibility(cfg({ combine: 'and', countMode: 'hold', items: [{ key: 'kind:0', count: 4 }, { key: 'kind:8', count: 4 }, { key: 'kind:4', count: 4 }, { key: 'kind:27', count: 3 }] }),
+    wall, nodora, 15).ok, true, 'カン1回で15枚まで持てる');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
