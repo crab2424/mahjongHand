@@ -26,10 +26,20 @@
   - 卓の縦 `gap` を 14px → 4px、上 padding を 18px → 14px に。リーチ棒の分の余白（`.river-wrap` の padding-top）は 14px。
 - 結果: 向聴表示の下端からリーチ棒まで約 8px。スマホ横向き（3列レイアウト）は従来どおり。
 
-## 3. 待ちを右パネルへ、記録は折りたたみ
+## 3. 待ちを右パネルへ、記録はダイアログへ
 
 - 課題: 多面待ちのとき卓右上の待ち表示が縦に伸び、河の領域を圧迫していた。
 - 対応:
-  - 右パネルを「牌効率 → 待ち → 記録」の順にし、以前の記録の場所（残りの高さ）を待ちに使う。聴牌でないときは案内文を出し、パネルの高さは変えない（レイアウトが跳ねない）。
-  - 記録は `<details>` で折りたたみ（既定は閉じる。開閉状態は `localStorage` の `soloMahjong.logOpen` に記憶）。開いたときは最大 30vh でスクロール。
+  - 右パネルを「牌効率 → 待ち」にし、以前の記録の場所（残りの高さ）を待ちに使う。聴牌でないときは案内文を出し、パネルの高さは変えない（レイアウトが跳ねない）。
+  - 記録はヘッダーの「記録」ボタンで開くダイアログ（`#log-dialog`）に移した。当初はパネル内の `<details>` で折りたたんだが、開くと右パネルのレイアウトが崩れたため変更。背景クリック・`Esc`・閉じるボタンで閉じる。件数は直近 200 件。スマホ横向き（右パネルなし）でも見られる。
   - スマホ横向き（`(orientation: landscape) and (max-height: 500px)`）は右パネルを出さないため、`matchMedia` で判定して待ち表示の要素を卓の右上（`#status-row`）へ移す（`placeWaitsBox`）。この場合は従来どおり聴牌時のみ表示。
+
+## 4. スマホで全画面にする
+
+- 課題: スマホのブラウザではアドレスバーが隠れず、横向きだと表示できる高さが大きく減る。
+- 制約: ページ側からアドレスバーを隠せるのは Fullscreen API だけ。iPhone の Safari は動画以外の全画面に対応していないため、ホーム画面に追加して開く方法しかない。
+- 対応:
+  - `manifest.webmanifest`（`display: fullscreen`・`orientation: landscape`・192/512px アイコン）と `apple-mobile-web-app-capable` などの meta を追加。ホーム画面から開くとアドレスバーなしになる。
+  - タッチ端末（`(hover: none)`）で、ホーム画面から開いていない（`display-mode` が standalone / fullscreen でない）ときだけ、ヘッダーに「全画面」ボタンを出す。
+    - Fullscreen API がある（Android Chrome・iPad Safari など）: `requestFullscreen({ navigationUI: 'hide' })` で全画面にし、`screen.orientation.lock('landscape')` を試す。もう一度押すと解除。
+    - Fullscreen API がない、または失敗した: ホーム画面に追加する手順をダイアログ（`#fs-dialog`）で案内する。

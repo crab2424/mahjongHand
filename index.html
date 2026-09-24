@@ -7,6 +7,13 @@
   <link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=2">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png?v=2">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=2">
+  <!-- ホーム画面に追加したときにアドレスバーなしの全画面で開く -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f1520">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="一人麻雀">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-display="image">
@@ -34,6 +41,8 @@
         <span class="value"><b id="turn">0</b></span>
       </div>
       <div class="spacer"></div>
+      <button class="btn ghost hidden" id="btn-fullscreen" type="button" title="全画面表示">⛶ 全画面</button>
+      <button class="btn ghost" id="btn-log" type="button">☰ 記録</button>
       <button class="btn ghost" id="btn-settings" type="button">⚙ 設定</button>
     </header>
 
@@ -56,7 +65,7 @@
         <div class="toast-layer" id="toast-layer"></div>
       </section>
 
-      <aside class="side">
+      <aside class="side" id="side">
         <section class="panel hint-panel">
           <h2>
             牌効率
@@ -69,10 +78,6 @@
           <h2 class="waits-title" id="waits-title">待ち</h2>
           <div class="waits-list" id="waits-list"></div>
         </section>
-        <details class="panel log-panel" id="log-panel">
-          <summary><h2>記録</h2></summary>
-          <ul class="log" id="log"></ul>
-        </details>
       </aside>
     </main>
 
@@ -116,6 +121,32 @@
       <div class="modal-actions">
         <button class="btn primary" id="btn-result-next" type="button">⟳ 次の配牌</button>
         <button class="btn ghost" id="btn-result-close" type="button">閉じて手牌を見る</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ===== 記録ダイアログ ===== -->
+  <dialog class="modal" id="log-dialog">
+    <div class="modal-card log-card">
+      <h2>記録 <small>新しい順</small></h2>
+      <ul class="log" id="log"></ul>
+      <div class="modal-actions">
+        <button class="btn primary" id="btn-log-close" type="button">閉じる</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ===== 全画面の案内（全画面 API が使えない端末: iPhone の Safari など） ===== -->
+  <dialog class="modal" id="fs-dialog">
+    <div class="modal-card fs-card">
+      <h2>全画面で遊ぶには</h2>
+      <p>このブラウザではページから全画面にできません。<b>ホーム画面に追加</b>して、そこから開くとアドレスバーなしの全画面で表示されます。</p>
+      <ul>
+        <li><b>iPhone / iPad（Safari）</b>: 共有ボタン（□に↑）→「ホーム画面に追加」</li>
+        <li><b>Android（Chrome）</b>: メニュー（⋮）→「ホーム画面に追加」または「アプリをインストール」</li>
+      </ul>
+      <div class="modal-actions">
+        <button class="btn primary" id="btn-fs-close" type="button">閉じる</button>
       </div>
     </div>
   </dialog>

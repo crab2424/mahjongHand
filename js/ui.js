@@ -47,7 +47,7 @@ const UI = (() => {
   const canHover = typeof matchMedia === 'function' && matchMedia('(hover: hover)').matches;
   const FAST_AUTO_MS = 500;    // これ未満の間隔は「高速」扱い（アニメーション省略・表示間引き）
   const RIVER_MIN_SCALE = 0.55; // 河の牌を縮小する下限（これでも収まらなければスクロール）
-  const LOG_OPEN_KEY = 'soloMahjong.logOpen';
+  const LOG_MAX = 200;          // 記録に残す件数
   // スマホ横向き（右パネルを出さない）レイアウト。待ちは卓の右上に置く
   const compactMQ = typeof matchMedia === 'function' ? matchMedia('(orientation: landscape) and (max-height: 500px)') : null;
   // 操作ボタンのキー（拼音の頭文字＋ローマ字の別名）: 立直 lìzhí / 杠 gàng / 和 hú / 过 guò(見逃し)
@@ -86,7 +86,8 @@ const UI = (() => {
       'btn-draw', 'btn-tsumo', 'btn-riichi', 'btn-kan', 'btn-tsumogiri', 'btn-cancel', 'mode-msg',
       'btn-reset', 'btn-auto', 'auto-status', 'btn-settings', 'chk-hints', 'result-dialog', 'settings-dialog',
       'result-body', 'btn-result-next', 'btn-result-close', 'btn-show-result', 'table', 'tileset-note', 'settings-tabs',
-      'want-editor', 'want-progress', 'btn-autodiscard', 'status-row', 'log-panel',
+      'want-editor', 'want-progress', 'btn-autodiscard', 'status-row', 'side',
+      'btn-log', 'log-dialog', 'btn-log-close', 'btn-fullscreen', 'fs-dialog', 'btn-fs-close',
     ];
     for (const id of ids) els[camel(id)] = document.getElementById(id);
     document.body.dataset.display = settings.display;
@@ -106,7 +107,7 @@ const UI = (() => {
   function placeWaitsBox() {
     const compact = !!(compactMQ && compactMQ.matches);
     if (compact) { if (els.waitsBox.parentNode !== els.statusRow) els.statusRow.appendChild(els.waitsBox); }
-    else if (els.waitsBox.nextElementSibling !== els.logPanel) els.logPanel.before(els.waitsBox);
+    else if (els.waitsBox.parentNode !== els.side) els.side.appendChild(els.waitsBox);
     els.waitsBox.classList.toggle('panel', !compact);
     if (game) { waitsKey = ''; renderWaitsBox(); }
   }
@@ -162,11 +163,14 @@ const UI = (() => {
     els.btnResultNext.addEventListener('click', () => { els.resultDialog.close(); resetGame(); });
     els.btnResultClose.addEventListener('click', () => { els.resultDialog.close(); renderActions(); });
     els.btnShowResult.addEventListener('click', () => { if (game.result) showResult(game.result); });
-    // 記録は折りたたみ（開閉を記憶）
-    try { els.logPanel.open = localStorage.getItem(LOG_OPEN_KEY) === '1'; } catch (e) { /* ignore */ }
-    els.logPanel.addEventListener('toggle', () => {
-      try { localStorage.setItem(LOG_OPEN_KEY, els.logPanel.open ? '1' : '0'); } catch (e) { /* ignore */ }
-    });
+    // 記録・全画面の案内はダイアログ（背景クリックでも閉じる）
+    els.btnLog.addEventListener('click', () => els.logDialog.showModal());
+    els.btnLogClose.addEventListener('click', () => els.logDialog.close());
+    els.btnFsClose.addEventListener('click', () => els.fsDialog.close());
+    for (const d of [els.logDialog, els.fsDialog]) {
+      d.addEventListener('click', (e) => { if (e.target === d) d.close(); });
+    }
+    initFullscreen();
     if (compactMQ) {
       if (compactMQ.addEventListener) compactMQ.addEventListener('change', placeWaitsBox);
       else if (compactMQ.addListener) compactMQ.addListener(placeWaitsBox);
@@ -215,7 +219,7 @@ const UI = (() => {
     }
 
     document.addEventListener('keydown', (e) => {
-      if (els.settingsDialog.open) return;
+      if (els.settingsDialog.open || els.logDialog.open || els.fsDialog.open) return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       const mod = e.ctrlKey || e.metaKey || e.altKey;
       // クリック後にボタンへ残ったフォーカスで Enter / Space が二重に作用しないようにする
@@ -265,6 +269,43 @@ const UI = (() => {
       if (el.classList) el.classList.remove('enter-deal', 'enter-draw', 'flip-in', 'enter-kan', 'landed');
       if (el.style) el.style.animationDelay = '';
     });
+  }
+
+  // ---------- 全画面 ----------
+  const fsTarget = document.documentElement;
+  const fsRequest = fsTarget.requestFullscreen || fsTarget.webkitRequestFullscreen;
+  const fsExit = document.exitFullscreen || document.webkitExitFullscreen;
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  const isStandalone = () => (typeof matchMedia === 'function'
+    && (matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches))
+    || navigator.standalone === true;
+
+  /**
+   * 全画面ボタン: タッチ端末でホーム画面から開いていないときに表示。
+   * 全画面 API が使えればそれで切り替え、使えなければ（iPhone の Safari）ホーム画面への追加を案内する。
+   */
+  function initFullscreen() {
+    const touch = typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
+    show(els.btnFullscreen, touch && !isStandalone());
+    els.btnFullscreen.addEventListener('click', toggleFullscreen);
+    const sync = () => {
+      const on = !!fsElement();
+      els.btnFullscreen.textContent = on ? '⛶ 全画面を解除' : '⛶ 全画面';
+      setTimeout(fitRiver, 200);
+    };
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+  }
+  async function toggleFullscreen() {
+    if (fsElement()) { try { await fsExit.call(document); } catch (e) { /* ignore */ } return; }
+    if (!fsRequest) { els.fsDialog.showModal(); return; }
+    try {
+      await fsRequest.call(fsTarget, { navigationUI: 'hide' });
+      // 横向きに固定できる端末では固定する（失敗しても無視）
+      if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+    } catch (e) {
+      els.fsDialog.showModal();
+    }
   }
 
   /** 設定ダイアログのタブ切り替え（最後に開いたタブを記憶） */
@@ -1444,7 +1485,7 @@ const UI = (() => {
     if (tile) body.appendChild(tileEl(tile, { size: 'xs' }));
     li.appendChild(body);
     els.log.prepend(li);
-    while (els.log.children.length > 30) els.log.lastElementChild.remove();
+    while (els.log.children.length > LOG_MAX) els.log.lastElementChild.remove();
   }
 
   // =====================================================
